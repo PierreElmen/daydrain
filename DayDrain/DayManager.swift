@@ -70,8 +70,11 @@ final class DayManager: ObservableObject {
     @Published private(set) var displayText: String = ""
     @Published private(set) var menuValueText: String = ""
 
+    var onDayComplete: (() -> Void)?
+
     private var timer: Timer?
     private var cancellables: Set<AnyCancellable> = []
+    private var hasTriggeredCompletionForCurrentDay = false
 
     private let defaults = UserDefaults.standard
     private let settingsKey = "WorkdaySettings"
@@ -183,6 +186,7 @@ final class DayManager: ObservableObject {
                 let total = endOfToday.timeIntervalSince(startOfToday)
                 menuValueText = formattedMenuValue(remaining: total, total: total)
             }
+            hasTriggeredCompletionForCurrentDay = false
             return
         }
 
@@ -192,6 +196,10 @@ final class DayManager: ObservableObject {
             if showMenuValue {
                 let total = endOfToday.timeIntervalSince(startOfToday)
                 menuValueText = formattedMenuValue(remaining: 0, total: total)
+            }
+            if !hasTriggeredCompletionForCurrentDay {
+                hasTriggeredCompletionForCurrentDay = true
+                onDayComplete?()
             }
             return
         }
@@ -203,6 +211,7 @@ final class DayManager: ObservableObject {
         if showMenuValue {
             menuValueText = formattedMenuValue(remaining: remaining, total: total)
         }
+        hasTriggeredCompletionForCurrentDay = false
     }
 
     private func combine(date: Date, with time: Date) -> Date? {

@@ -9,18 +9,29 @@ final class MenuBarController {
     private var hostingView: NSHostingView<StatusBarView>?
     private var cancellables: Set<AnyCancellable> = []
     private let dayManager: DayManager
+    private let toDoManager: ToDoManager
     private var settingsWindowController: NSWindowController?
     private var latestProgress: Double = 0
     private var latestMenuValue: String = ""
     private let statusItemHorizontalPadding: CGFloat = 8
     private var currentStatusItemLength: CGFloat = 0
+    private var latestPulseToken: Int = 0
+    private var shouldDimBar: Bool = false
+    private var shortcutMonitor: Any?
 
-    init(dayManager: DayManager) {
+    private lazy var contextMenu: NSMenu = buildMenu()
+    private let panelPopover = NSPopover()
+    private var panelHostingController: NSHostingController<ToDoPanel>?
+
+    init(dayManager: DayManager, toDoManager: ToDoManager) {
         self.dayManager = dayManager
+        self.toDoManager = toDoManager
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.menu = buildMenu()
         statusItem.isVisible = true
         statusItem.button?.toolTip = "DayDrain"
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(handleStatusItemTap)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         NSApp.setActivationPolicy(.accessory)
 
@@ -29,8 +40,18 @@ final class MenuBarController {
         currentStatusItemLength = calculatedStatusItemLength(for: latestMenuValue)
         statusItem.length = currentStatusItemLength
 
+        panelPopover.behavior = .transient
+        panelPopover.animates = true
+
         setupBindings()
+        registerShortcuts()
         updateStatusBarView()
+    }
+
+    deinit {
+        if let shortcutMonitor {
+            NSEvent.removeMonitor(shortcutMonitor)
+        }
     }
 
     private func setupBindings() {
@@ -66,11 +87,32 @@ final class MenuBarController {
                 self?.statusItem.button?.toolTip = tooltip
             }
             .store(in: &cancellables)
+
+        toDoManager.$pulseToken
+            .receive(on: RunLoop.main)
+            .sink { [weak self] token in
+                self?.latestPulseToken = token
+                self?.updateStatusBarView()
+            }
+            .store(in: &cancellables)
+
+        toDoManager.$allTasksCompleted
+            .receive(on: RunLoop.main)
+            .sink { [weak self] completed in
+                self?.shouldDimBar = completed
+                self?.updateStatusBarView()
+            }
+            .store(in: &cancellables)
     }
 
     private func updateStatusBarView() {
         guard let button = statusItem.button else { return }
-        let view = StatusBarView(progress: latestProgress, menuLabel: latestMenuValue)
+        let view = StatusBarView(
+            progress: latestProgress,
+            menuLabel: latestMenuValue,
+            pulseToken: latestPulseToken,
+            isDimmed: shouldDimBar
+        )
 
         if let hostingView {
             hostingView.rootView = view
@@ -91,6 +133,88 @@ final class MenuBarController {
 
         let newLength = calculatedStatusItemLength(for: latestMenuValue)
         updateStatusItemLengthIfNeeded(newLength)
+    }
+
+    @objc private func handleStatusItemTap(_ sender: Any?) {
+        guard let event = NSApp.currentEvent else {
+            togglePanel()
+            return
+        }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.type == .rightMouseUp || event.type == .rightMouseDown || flags.contains(.control) {
+            hidePanel()
+            statusItem.popUpMenu(contextMenu)
+        } else {
+            togglePanel()
+        }
+    }
+
+    private func togglePanel() {
+        if panelPopover.isShown {
+            hidePanel()
+        } else {
+            showPanel()
+        }
+    }
+
+    private func showPanel() {
+        guard let button = statusItem.button else { return }
+        updatePopoverContent()
+        panelPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        if let window = panelPopover.contentViewController?.view.window {
+            window.makeKey()
+        }
+    }
+
+    private func hidePanel() {
+        panelPopover.performClose(nil)
+    }
+
+    private func updatePopoverContent() {
+        let panelView = ToDoPanel(
+            manager: toDoManager,
+            openSettings: { [weak self] in
+                self?.hidePanel()
+                self?.openSettings()
+            },
+            quitApplication: { [weak self] in
+                self?.hidePanel()
+                self?.quit()
+            }
+        )
+
+        if let hosting = panelHostingController {
+            hosting.rootView = panelView
+        } else {
+            let hosting = NSHostingController(rootView: panelView)
+            panelPopover.contentViewController = hosting
+            panelHostingController = hosting
+        }
+    }
+
+    private func registerShortcuts() {
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self else { return event }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            if flags.contains([.command, .shift]),
+               event.charactersIgnoringModifiers?.lowercased() == "t" {
+                if toDoManager.quickAddTask() {
+                    showPanel()
+                    return nil
+                }
+                return event
+            }
+
+            if flags == [.command], event.keyCode == 36 {
+                if toDoManager.markTopIncompleteTaskDone() {
+                    return nil
+                }
+            }
+
+            return event
+        }
     }
 
     private func calculatedStatusItemLength(for label: String) -> CGFloat {
