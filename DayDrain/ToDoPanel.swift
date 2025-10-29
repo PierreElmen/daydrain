@@ -87,11 +87,11 @@ struct ToDoPanel: View {
                             .padding(.horizontal, 2)
                     }
                     .padding(.horizontal, 18)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, alignment: .top)
                     .onDrop(of: [UTType.utf8PlainText], delegate: DropDelegate(onDrop: { manager.handleDropPayload($0, to: selectedEntry.date) }))
                 }
                 
-                Spacer()
+                Spacer(minLength: 16)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         focusedTaskID = nil
@@ -134,6 +134,7 @@ struct ToDoPanel: View {
                 .padding(.vertical, 8)
             }
             .frame(width: panelWidth)
+            .fixedSize(horizontal: true, vertical: true)
             .background(PanelBackground())
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color.black.opacity(0.18), radius: 16, x: 0, y: 8)

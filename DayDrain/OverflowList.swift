@@ -41,6 +41,7 @@ struct OverflowList: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear { focusedIndex = manager.focusedOverflowIndex }
         .onReceive(manager.$focusedOverflowIndex) { index in
             DispatchQueue.main.async {
