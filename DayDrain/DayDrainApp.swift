@@ -15,6 +15,5 @@ struct DayDrainApp: App {
         Settings {
             SettingsView(dayManager: dayManager)
         }
-        .settingsStyle(.toolbar)
     }
 }

@@ -4,6 +4,26 @@ struct SettingsView: View {
     @ObservedObject var dayManager: DayManager
 
     var body: some View {
+        TabView {
+            GeneralSettingsView(dayManager: dayManager)
+                .tabItem {
+                    Label("General", systemImage: "gear")
+                }
+            
+            AboutView()
+                .tabItem {
+                    Label("About", systemImage: "info.circle")
+                }
+        }
+        .padding(20)
+        .frame(minWidth: 520, minHeight: 420)
+    }
+}
+
+private struct GeneralSettingsView: View {
+    @ObservedObject var dayManager: DayManager
+
+    var body: some View {
         Form {
             Section(header: Text("Workdays")) {
                 Text("Select the days when DayDrain should appear in the menu bar.")
@@ -30,16 +50,51 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(20)
-        .frame(width: 360)
+        .formStyle(.grouped)
     }
 
     private var dayManagerDescription: String {
         if dayManager.isActive {
-            return dayManager.displayText
-        } else {
-            return "DayDrain will appear only during the configured work hours on selected days."
+            return dayManager.displayText.isEmpty
+                ? "DayDrain stays visible all day on selected weekdays and updates as your schedule progresses."
+                : dayManager.displayText
         }
+
+        return "Pick the weekdays you want. The menu bar item will stay available before, during, and after the hours you set."
+    }
+}
+
+private struct AboutView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "clock.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.accentColor)
+            
+            Text("DayDrain")
+                .font(.title)
+                .fontWeight(.bold)
+            
+            Text("Version 1.0")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            
+            Text("A menu bar app that visualizes your workday progress")
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 60)
+            
+            Divider()
+                .padding(.horizontal, 60)
+            
+            Text("Made with ❤️ using SwiftUI")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Spacer()
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

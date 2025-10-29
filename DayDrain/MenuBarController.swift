@@ -2,13 +2,14 @@ import AppKit
 import SwiftUI
 import Combine
 
-/// Wraps the NSStatusBar configuration and keeps it in sync with the published values from
-/// the `DayManager`.
+/// Wraps an NSStatusItem and keeps it in sync with DayManager.
+@MainActor
 final class MenuBarController {
     private let statusItem: NSStatusItem
     private var hostingView: NSHostingView<StatusBarView>?
     private var cancellables: Set<AnyCancellable> = []
     private let dayManager: DayManager
+    private var settingsWindowController: NSWindowController?
     private let barWidth: CGFloat = 70
 
     init(dayManager: DayManager) {
@@ -22,6 +23,7 @@ final class MenuBarController {
         NSApp.setActivationPolicy(.accessory)
 
         setupBindings()
+        updateProgress(dayManager.progress)
     }
 
     private func setupBindings() {
@@ -75,6 +77,7 @@ final class MenuBarController {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -89,31 +92,35 @@ final class MenuBarController {
     }
 
     @objc private func openSettings() {
-        NSApp.sendAction(#selector(NSApplication.showPreferencesWindow(_:)), to: nil, from: nil)
+        if let window = settingsWindowController?.window {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let hostingController = NSHostingController(rootView: SettingsView(dayManager: dayManager))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "DayDrain Settings"
+        window.isReleasedWhenClosed = false
+        window.contentViewController = hostingController
+        window.contentMinSize = NSSize(width: 520, height: 420)
+        window.setContentSize(NSSize(width: 520, height: 420))
+        window.center()
+        window.setFrameAutosaveName("DayDrainSettingsWindow")
+
+        let controller = NSWindowController(window: window)
+        settingsWindowController = controller
+
+        controller.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func quit() {
         NSApp.terminate(nil)
-    }
-}
-
-/// Simple SwiftUI view that renders the draining bar inside the status bar.
-struct StatusBarView: View {
-    let progress: Double
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: geometry.size.height / 2)
-                    .fill(Color.primary.opacity(0.12))
-                RoundedRectangle(cornerRadius: geometry.size.height / 2)
-                    .fill(Color.accentColor)
-                    .frame(width: geometry.size.width * CGFloat(progress))
-                RoundedRectangle(cornerRadius: geometry.size.height / 2)
-                    .stroke(Color.primary.opacity(0.35), lineWidth: 1)
-            }
-            .animation(.easeInOut(duration: 0.25), value: progress)
-        }
-        .frame(width: 70, height: 12)
     }
 }

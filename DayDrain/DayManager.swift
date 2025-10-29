@@ -142,30 +142,40 @@ final class DayManager: ObservableObject {
     /// Recomputes visibility, progress and display text for the menu bar item.
     func refresh() {
         let now = Date()
+        let isWorkday = shouldDisplay(on: now)
+        isActive = isWorkday
+
         guard let startOfToday = combine(date: now, with: startTime),
-              let endOfToday = combine(date: now, with: endTime),
-              endOfToday > startOfToday else {
+              let endOfToday = combine(date: now, with: endTime) else {
             progress = 0
-            isActive = false
             displayText = "Configure working hours"
             return
         }
 
-        guard shouldDisplay(on: now) else {
+        guard endOfToday > startOfToday else {
             progress = 0
-            isActive = false
+            displayText = "End time must be later than start time"
+            return
+        }
+
+        guard isWorkday else {
+            progress = 0
             displayText = "Outside scheduled days"
             return
         }
 
-        guard now >= startOfToday && now <= endOfToday else {
-            progress = 0
-            isActive = false
-            displayText = now < startOfToday ? "Workday has not started" : "Workday completed"
+        if now < startOfToday {
+            progress = 1
+            displayText = "Workday starts at \(formattedTime(startOfToday))"
             return
         }
 
-        isActive = true
+        if now >= endOfToday {
+            progress = 0
+            displayText = "Workday completed"
+            return
+        }
+
         let total = endOfToday.timeIntervalSince(startOfToday)
         let remaining = max(0, endOfToday.timeIntervalSince(now))
         progress = total == 0 ? 0 : min(1, remaining / total)
@@ -235,5 +245,16 @@ final class DayManager: ObservableObject {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.hour, .minute], from: date)
         return .init(hour: components.hour ?? 0, minute: components.minute ?? 0)
+    }
+
+    private lazy var timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
+
+    private func formattedTime(_ date: Date) -> String {
+        timeFormatter.string(from: date)
     }
 }
