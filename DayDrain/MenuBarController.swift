@@ -208,13 +208,45 @@ final class MenuBarController {
             guard let self else { return event }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-            if flags.contains([.command, .shift]),
-               event.charactersIgnoringModifiers?.lowercased() == "t" {
-                if toDoManager.quickAddTask() {
+            if flags.contains([.command, .shift]) {
+                if let character = event.charactersIgnoringModifiers?.lowercased() {
+                    switch character {
+                    case "t":
+                        if toDoManager.quickAddTask() {
+                            showPanel()
+                            return nil
+                        }
+                        return event
+                    case "i":
+                        toDoManager.showInboxPanel()
+                        showPanel()
+                        return nil
+                    case "o":
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            toDoManager.toggleOverflowSection()
+                        }
+                        showPanel()
+                        return nil
+                    case "f":
+                        showPanel()
+                        toDoManager.focusedTaskID = toDoManager.highlightedTaskID
+                        return nil
+                    default:
+                        break
+                    }
+                }
+
+                if event.keyCode == 126 { // arrow up
+                    toDoManager.moveActiveContextTowardFocus(defaultPriority: .medium)
                     showPanel()
                     return nil
                 }
-                return event
+
+                if event.keyCode == 125 { // arrow down
+                    toDoManager.moveActiveContextAwayFromFocus(defaultPriority: .medium)
+                    showPanel()
+                    return nil
+                }
             }
 
             if flags == [.command], event.keyCode == 36 {

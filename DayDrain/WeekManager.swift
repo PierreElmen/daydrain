@@ -136,6 +136,7 @@ final class WeekManager {
 
     private func makeSnapshot(for date: Date) -> DailyFocusSnapshot {
         var tasks = Self.defaultTasks()
+        var inboxItems: [InboxItem] = []
         let previousDate = isoCalendar.date(byAdding: .day, value: -1, to: date)
 
         if let previousDate,
@@ -150,10 +151,13 @@ final class WeekManager {
                 tasks[slotIndex].done = false
                 slotIndex += 1
             }
+            inboxItems = previousSnapshot.inbox.map { item in
+                InboxItem(id: item.id, text: String(item.text.prefix(100)), priority: item.priority, done: item.done)
+            }
         }
 
         let iso = isoFormatter.string(from: startOfDay(for: date))
-        return DailyFocusSnapshot(date: iso, tasks: tasks, mood: nil)
+        return DailyFocusSnapshot(date: iso, tasks: tasks, mood: nil, overflow: [], inbox: inboxItems)
     }
 
     private func sanitizedSnapshot(_ snapshot: DailyFocusSnapshot) -> DailyFocusSnapshot {
@@ -165,6 +169,24 @@ final class WeekManager {
                 sanitized.tasks[index].note = String(match.note.prefix(200))
             }
         }
+
+        sanitized.overflow = snapshot.overflow.map { task in
+            OverflowTask(
+                id: task.id,
+                text: String(task.text.prefix(80)),
+                done: task.done
+            )
+        }
+
+        sanitized.inbox = snapshot.inbox.map { item in
+            InboxItem(
+                id: item.id,
+                text: String(item.text.prefix(100)),
+                priority: item.priority,
+                done: item.done
+            )
+        }
+
         return sanitized
     }
 
