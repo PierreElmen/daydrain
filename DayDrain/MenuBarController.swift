@@ -223,7 +223,7 @@ final class MenuBarController {
                         return nil
                     case "o":
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            toDoManager.toggleOverflowSection()
+                            self.toDoManager.toggleOverflowSection()
                         }
                         showPanel()
                         return nil

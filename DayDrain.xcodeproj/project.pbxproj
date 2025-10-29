@@ -16,6 +16,10 @@
 		AA7777777777777777777777 /* ToDoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB7777777777777777777777 /* ToDoPanel.swift */; };
 		AA8888888888888888888888 /* WeekManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB8888888888888888888888 /* WeekManager.swift */; };
 		AA9999999999999999999999 /* FocusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9999999999999999999999 /* FocusModels.swift */; };
+		AAAAAAAAAAAAAAAAAAAAAA /* OverflowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAAAAAAAAAAAAAAAAAAAA /* OverflowManager.swift */; };
+		AABBBBBBBBBBBBBBBBBBBB /* InboxManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBBBBBBBBBBBBBBBBBBBB /* InboxManager.swift */; };
+		AACCCCCCCCCCCCCCCCCCCC /* WindDownPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCCCCCCCCCCCCCCCCCCCC /* WindDownPrompt.swift */; };
+		AADDDDDDDDDDDDDDDDDDDD /* VisualEffectBlur.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBDDDDDDDDDDDDDDDDDDDD /* VisualEffectBlur.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +32,10 @@
                 BB7777777777777777777777 /* ToDoPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDoPanel.swift; sourceTree = "<group>"; };
                 BB8888888888888888888888 /* WeekManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekManager.swift; sourceTree = "<group>"; };
                 BB9999999999999999999999 /* FocusModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusModels.swift; sourceTree = "<group>"; };
+		BBAAAAAAAAAAAAAAAAAAAA /* OverflowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverflowManager.swift; sourceTree = "<group>"; };
+		BBBBBBBBBBBBBBBBBBBBBB /* InboxManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxManager.swift; sourceTree = "<group>"; };
+		BBCCCCCCCCCCCCCCCCCCCC /* WindDownPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindDownPrompt.swift; sourceTree = "<group>"; };
+		BBDDDDDDDDDDDDDDDDDDDD /* VisualEffectBlur.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualEffectBlur.swift; sourceTree = "<group>"; };
 		CC1111111111111111111111 /* DayDrain.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DayDrain.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD1111111111111111111111 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -63,6 +71,10 @@
                                 BB7777777777777777777777 /* ToDoPanel.swift */,
                                 BB8888888888888888888888 /* WeekManager.swift */,
                                 BB9999999999999999999999 /* FocusModels.swift */,
+				BBAAAAAAAAAAAAAAAAAAAA /* OverflowManager.swift */,
+				BBBBBBBBBBBBBBBBBBBBBB /* InboxManager.swift */,
+				BBCCCCCCCCCCCCCCCCCCCC /* WindDownPrompt.swift */,
+				BBDDDDDDDDDDDDDDDDDDDD /* VisualEffectBlur.swift */,
                                 DD1111111111111111111111 /* Info.plist */,
 			);
 			path = DayDrain;
@@ -153,6 +165,10 @@
                                 AA7777777777777777777777 /* ToDoPanel.swift in Sources */,
                                 AA8888888888888888888888 /* WeekManager.swift in Sources */,
                                 AA9999999999999999999999 /* FocusModels.swift in Sources */,
+				AAAAAAAAAAAAAAAAAAAAAA /* OverflowManager.swift in Sources */,
+				AABBBBBBBBBBBBBBBBBBBB /* InboxManager.swift in Sources */,
+				AACCCCCCCCCCCCCCCCCCCC /* WindDownPrompt.swift in Sources */,
+				AADDDDDDDDDDDDDDDDDDDD /* VisualEffectBlur.swift in Sources */,
                         );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
