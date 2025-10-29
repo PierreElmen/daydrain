@@ -13,7 +13,9 @@
 		AA4444444444444444444444 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4444444444444444444444 /* SettingsView.swift */; };
                 AA5555555555555555555555 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB5555555555555555555555 /* MenuBarController.swift */; };
                 AA6666666666666666666666 /* ToDoManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB6666666666666666666666 /* ToDoManager.swift */; };
-                AA7777777777777777777777 /* ToDoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB7777777777777777777777 /* ToDoPanel.swift */; };
+		AA7777777777777777777777 /* ToDoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB7777777777777777777777 /* ToDoPanel.swift */; };
+		AA8888888888888888888888 /* WeekManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB8888888888888888888888 /* WeekManager.swift */; };
+		AA9999999999999999999999 /* FocusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9999999999999999999999 /* FocusModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +26,8 @@
                 BB5555555555555555555555 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
                 BB6666666666666666666666 /* ToDoManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDoManager.swift; sourceTree = "<group>"; };
                 BB7777777777777777777777 /* ToDoPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDoPanel.swift; sourceTree = "<group>"; };
+                BB8888888888888888888888 /* WeekManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekManager.swift; sourceTree = "<group>"; };
+                BB9999999999999999999999 /* FocusModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusModels.swift; sourceTree = "<group>"; };
 		CC1111111111111111111111 /* DayDrain.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DayDrain.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD1111111111111111111111 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -57,6 +61,8 @@
                                 BB5555555555555555555555 /* MenuBarController.swift */,
                                 BB6666666666666666666666 /* ToDoManager.swift */,
                                 BB7777777777777777777777 /* ToDoPanel.swift */,
+                                BB8888888888888888888888 /* WeekManager.swift */,
+                                BB9999999999999999999999 /* FocusModels.swift */,
                                 DD1111111111111111111111 /* Info.plist */,
 			);
 			path = DayDrain;
@@ -145,6 +151,8 @@
                                 AA5555555555555555555555 /* MenuBarController.swift in Sources */,
                                 AA6666666666666666666666 /* ToDoManager.swift in Sources */,
                                 AA7777777777777777777777 /* ToDoPanel.swift in Sources */,
+                                AA8888888888888888888888 /* WeekManager.swift in Sources */,
+                                AA9999999999999999999999 /* FocusModels.swift in Sources */,
                         );
 			runOnlyForDeploymentPostprocessing = 0;
 		};

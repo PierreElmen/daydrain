@@ -110,7 +110,7 @@ struct ToDoPanel: View {
                 .tag(entry.date)
             }
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
+        // Removed .tabViewStyle(.page(indexDisplayMode: .never)) because it's unavailable on macOS
         .frame(height: 236)
         .animation(.easeInOut(duration: 0.25), value: manager.selectedDate)
     }

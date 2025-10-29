@@ -58,11 +58,10 @@ final class WeekManager {
         let fromKey = isoFormatter.string(from: startOfDay(for: dayFrom))
         let toKey = isoFormatter.string(from: startOfDay(for: dayTo))
 
-        guard var fromSnapshot = cachedSnapshots[fromKey] ?? loadSnapshot(for: dayFrom),
-              var toSnapshot = cachedSnapshots[toKey] ?? loadSnapshot(for: dayTo),
-              taskIndex < fromSnapshot.tasks.count else {
-            return nil
-        }
+        var fromSnapshot = cachedSnapshots[fromKey] ?? loadSnapshot(for: dayFrom)
+        var toSnapshot = cachedSnapshots[toKey] ?? loadSnapshot(for: dayTo)
+
+        guard taskIndex < fromSnapshot.tasks.count else { return nil }
 
         let task = fromSnapshot.tasks[taskIndex]
         let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
