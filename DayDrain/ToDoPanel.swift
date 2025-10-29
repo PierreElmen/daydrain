@@ -133,6 +133,7 @@ struct ToDoPanel: View {
                 .transition(.scale(scale: 0.94).combined(with: .opacity))
             }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: manager.isWindDownPromptVisible)
         .onAppear {
             isVisible = true
             focusedTaskID = manager.focusedTaskID
@@ -367,46 +368,50 @@ private struct WindDownPrompt: View {
     ]
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             Text("How did your day feel today?")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.primary.opacity(0.85))
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundColor(.primary.opacity(0.9))
 
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 ForEach(moods, id: \.0) { mood in
                     Button(action: { onSelectMood(mood.0) }) {
                         Text(mood.1)
-                            .font(.system(size: 24))
-                            .padding(10)
+                            .font(.system(size: 20))
+                            .frame(width: 40, height: 40)
                     }
                     .buttonStyle(.plain)
                     .contentShape(Circle())
                     .background(
                         Circle()
-                            .fill(Color.white.opacity(0.12))
+                            .fill(Color.white.opacity(0.15))
                     )
                     .overlay(
                         Circle()
-                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
                     )
                 }
             }
 
             Button("Maybe later", action: onCancel)
                 .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
+                .foregroundColor(.secondary.opacity(0.8))
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 20)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 24)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.14))
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.black.opacity(0.25))
-                        .blur(radius: 30)
-                )
+            ZStack {
+                VisualEffectBlur(material: .hudWindow, blendingMode: .withinWindow)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.black.opacity(0.4))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.4), radius: 30, x: 0, y: 10)
     }
 }
 
