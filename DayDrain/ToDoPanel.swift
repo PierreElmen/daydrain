@@ -21,27 +21,99 @@ struct ToDoPanel: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 18) {
-                header
-                navigation
-                dayCarousel
-                weeklySummary
-                actionButtons
+            VStack(spacing: 0) {
+                // Header with navigation
+                HStack(spacing: 12) {
+                    Button(action: manager.goToPreviousDay) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(NavButtonStyle())
+                    .disabled(isAtFirstDay)
+                    .help("Previous day")
+                    
+                    Text(manager.descriptor(for: manager.selectedDate))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.primary.opacity(0.85))
+                        .frame(maxWidth: .infinity)
+                    
+                    Button(action: manager.goToNextDay) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .buttonStyle(NavButtonStyle())
+                    .disabled(isAtLastDay)
+                    .help("Next day")
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+                
+                // Subtitle
+                Text("Focus on the most important tasks")
+                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 12)
+                
+                // Main focus content (no scroll)
+                if let selectedEntry = manager.dayEntries.first(where: { Calendar.current.isDate($0.date, inSameDayAs: manager.selectedDate) }) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(selectedEntry.snapshot.tasks) { task in
+                            FocusTaskRow(
+                                task: task,
+                                isHighlighted: manager.highlightedTaskID == task.id,
+                                onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
+                                onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
+                                onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
+                                onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) }
+                            )
+                            .focused($focusedTaskID, equals: task.id)
+                            .conditionalModifier(canDrag(task: task)) {
+                                $0.onDrag { NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString) }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .onDrop(of: [UTType.utf8PlainText], delegate: DropDelegate(onDrop: { manager.handleDropPayload($0, to: selectedEntry.date) }))
+                }
+                
+                Spacer()
+                
+                Divider()
+                    .padding(.horizontal, 12)
+                
+                // Compact bottom toolbar
+                HStack(spacing: 8) {
+                    Button(action: manager.triggerWindDownPrompt) {
+                        Image(systemName: "moon.zzz.fill")
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                    .help("Wind Down")
+                    
+                    Button(action: openSettings) {
+                        Image(systemName: "gear")
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                    .help("Settings")
+                    
+                    Button(action: quitApplication) {
+                        Image(systemName: "power")
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                    .help("Quit")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
             .frame(width: panelWidth)
             .background(PanelBackground())
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color.black.opacity(0.18), radius: 16, x: 0, y: 8)
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible ? 0 : -12)
-            .animation(.spring(response: 0.32, dampingFraction: 0.78), value: isVisible)
 
             if manager.isWindDownPromptVisible {
-                Color.black.opacity(0.35)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
                 WindDownPrompt(
                     onSelectMood: { manager.logMood($0) },
                     onCancel: { manager.dismissWindDownPrompt() }
@@ -55,130 +127,10 @@ struct ToDoPanel: View {
         }
         .onReceive(manager.$focusedTaskID) { focusedTaskID = $0 }
     }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Rhythm & Flow")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.primary.opacity(0.85))
-                .padding(.top, 4)
-
-            Text("Glance at the week, carry light notes, and end the day softly.")
-                .font(.system(size: 11, weight: .regular, design: .rounded))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var navigation: some View {
-        HStack(spacing: 12) {
-            Button(action: manager.goToPreviousDay) {
-                Image(systemName: "chevron.left")
-            }
-            .buttonStyle(NavButtonStyle())
-            .disabled(isAtFirstDay)
-
-            Text(manager.descriptor(for: manager.selectedDate))
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundColor(.primary.opacity(0.8))
-                .frame(maxWidth: .infinity)
-
-            Button(action: manager.goToNextDay) {
-                Image(systemName: "chevron.right")
-            }
-            .buttonStyle(NavButtonStyle())
-            .disabled(isAtLastDay)
-        }
-    }
-
-    private var dayCarousel: some View {
-        TabView(selection: selectedDateBinding) {
-            ForEach(manager.dayEntries) { entry in
-                DayCardView(
-                    entry: entry,
-                    highlightedTaskID: manager.highlightedTaskID,
-                    descriptor: manager.descriptor(for: entry.date),
-                    focusState: $focusedTaskID,
-                    isSelected: Calendar.current.isDate(entry.date, inSameDayAs: manager.selectedDate),
-                    payloadProvider: { manager.dragPayload(for: entry.date, taskID: $0) },
-                    onToggle: { manager.toggleTaskCompletion(on: entry.date, taskID: $0) },
-                    onTextChange: { manager.updateTaskText(on: entry.date, taskID: $0, text: $1) },
-                    onNoteChange: { manager.updateNote(on: entry.date, taskID: $0, note: $1) },
-                    onClear: { manager.clearTask(on: entry.date, taskID: $0) },
-                    onDrop: { manager.handleDropPayload($0, to: entry.date) }
-                )
-                .tag(entry.date)
-            }
-        }
-        // Removed .tabViewStyle(.page(indexDisplayMode: .never)) because it's unavailable on macOS
-        .frame(height: 236)
-        .animation(.easeInOut(duration: 0.25), value: manager.selectedDate)
-    }
-
-    private var weeklySummary: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(manager.completionSummaryText)
-                .font(.system(size: 11, weight: .regular, design: .rounded))
-                .foregroundColor(.secondary)
-
-            HStack(spacing: 8) {
-                ForEach(manager.weekSummary.dayBreakdown) { day in
-                    Circle()
-                        .fill(color(for: day))
-                        .frame(width: 8, height: 8)
-                        .help(summaryTooltip(for: day))
-                }
-
-                if let emoji = manager.averageMoodEmoji {
-                    Text(emoji)
-                        .font(.system(size: 12))
-                        .transition(.opacity)
-                        .help(manager.averageMoodTooltip ?? "")
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var actionButtons: some View {
-        HStack(spacing: 12) {
-            Button(action: manager.triggerWindDownPrompt) {
-                Label("Wind Down", systemImage: "moon.zzz.fill")
-            }
-            .buttonStyle(PanelButtonStyle())
-
-            Button(action: openSettings) {
-                Label("Settings", systemImage: "gear")
-            }
-            .buttonStyle(PanelButtonStyle())
-
-            Button(action: quitApplication) {
-                Label("Quit", systemImage: "power")
-            }
-            .buttonStyle(PanelButtonStyle())
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func color(for day: WeekSummary.DayBreakdown) -> Color {
-        if day.completed == 0 {
-            return Color.gray.opacity(0.35)
-        } else if day.completed == day.total {
-            return Color.green.opacity(0.65)
-        } else {
-            return Color.yellow.opacity(0.6)
-        }
-    }
-
-    private func summaryTooltip(for day: WeekSummary.DayBreakdown) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE d MMM"
-        let base = formatter.string(from: day.date)
-        let completion = "\(day.completed) / \(day.total) tasks"
-        if let mood = day.mood {
-            return "\(base): \(completion), mood \(mood)"
-        }
-        return "\(base): \(completion)"
+    
+    private func canDrag(task: FocusTask) -> Bool {
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !task.done
     }
 }
 
@@ -207,6 +159,34 @@ private struct NavButtonStyle: ButtonStyle {
     }
 }
 
+private struct CompactButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 14, weight: .medium))
+            .foregroundColor(.primary.opacity(configuration.isPressed ? 0.5 : 0.75))
+            .frame(width: 32, height: 32)
+            .background(
+                Circle()
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.12 : 0.08))
+            )
+    }
+}
+
+private struct DropDelegate: SwiftUI.DropDelegate {
+    let onDrop: (String) -> Void
+    
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [UTType.utf8PlainText]).first else { return false }
+        provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let payload = object as? String else { return }
+            DispatchQueue.main.async {
+                onDrop(payload)
+            }
+        }
+        return true
+    }
+}
+
 private struct PanelBackground: View {
     var body: some View {
         VisualEffectBlur(material: .menu, blendingMode: .withinWindow)
@@ -214,124 +194,6 @@ private struct PanelBackground: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
             )
-    }
-}
-
-private struct PanelButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 11, weight: .medium, design: .rounded))
-            .foregroundColor(.primary.opacity(configuration.isPressed ? 0.5 : 0.75))
-            .padding(.vertical, 6)
-            .padding(.horizontal, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(configuration.isPressed ? 0.07 : 0.05))
-            )
-    }
-}
-
-private struct DayCardView: View {
-    let entry: ToDoManager.DayEntry
-    let highlightedTaskID: FocusTask.ID?
-    let descriptor: String
-    let focusState: FocusState<FocusTask.ID?>.Binding
-    let isSelected: Bool
-    let payloadProvider: (FocusTask.ID) -> String
-    let onToggle: (FocusTask.ID) -> Void
-    let onTextChange: (FocusTask.ID, String) -> Void
-    let onNoteChange: (FocusTask.ID, String) -> Void
-    let onClear: (FocusTask.ID) -> Void
-    let onDrop: (String) -> Void
-
-    @State private var isTargeted = false
-
-    private static let headerFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE"
-        return formatter
-    }()
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(Self.headerFormatter.string(from: entry.date))
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundColor(.primary.opacity(0.75))
-                    Text(descriptor)
-                        .font(.system(size: 10, weight: .regular, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                if let mood = entry.snapshot.mood {
-                    Text(moodEmoji(for: mood))
-                        .font(.system(size: 16))
-                        .transition(.opacity)
-                        .help("Mood logged: \(mood)")
-                }
-            }
-
-            VStack(spacing: 10) {
-                ForEach(entry.snapshot.tasks) { task in
-                    FocusTaskRow(
-                        task: task,
-                        isHighlighted: isSelected && highlightedTaskID == task.id,
-                        onToggle: { onToggle(task.id) },
-                        onTextChange: { onTextChange(task.id, $0) },
-                        onNoteChange: { onNoteChange(task.id, $0) },
-                        onClear: { onClear(task.id) }
-                    )
-                    .focused(focusState, equals: task.id)
-                    .conditionalModifier(canDrag(task: task)) {
-                        $0.onDrag { NSItemProvider(object: payloadProvider(task.id) as NSString) }
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(isSelected ? 0.12 : 0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(isSelected ? Color.orange.opacity(0.35) : Color.white.opacity(0.05), lineWidth: 1)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.orange.opacity(isTargeted ? 0.45 : 0), lineWidth: 2)
-        )
-        .animation(.easeInOut(duration: 0.25), value: isSelected)
-        .animation(.easeInOut(duration: 0.2), value: isTargeted)
-        .onDrop(of: [UTType.utf8PlainText], isTargeted: $isTargeted) { providers in
-            guard isSelected else { return false }
-            guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return false }
-            provider.loadObject(ofClass: NSString.self) { object, _ in
-                guard let payload = object as? String else { return }
-                DispatchQueue.main.async {
-                    onDrop(payload)
-                }
-            }
-            return true
-        }
-    }
-
-    private func canDrag(task: FocusTask) -> Bool {
-        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && !task.done
-    }
-
-    private func moodEmoji(for value: Int) -> String {
-        switch value {
-        case ..<2: return "😫"
-        case 2: return "😕"
-        case 3: return "😐"
-        case 4: return "🙂"
-        default: return "😄"
-        }
     }
 }
 
