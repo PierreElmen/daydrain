@@ -208,13 +208,50 @@ final class MenuBarController {
             guard let self else { return event }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-            if flags.contains([.command, .shift]),
-               event.charactersIgnoringModifiers?.lowercased() == "t" {
-                if toDoManager.quickAddTask() {
-                    showPanel()
-                    return nil
+            if flags == [.command, .shift] {
+                if let character = event.charactersIgnoringModifiers?.lowercased() {
+                    switch character {
+                    case "t":
+                        if toDoManager.quickAddTask() {
+                            showPanel()
+                            return nil
+                        }
+                    case "i":
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            toDoManager.toggleInboxPanelVisibility()
+                        }
+                        showPanel()
+                        return nil
+                    case "o":
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            toDoManager.toggleOverflowCollapsed()
+                        }
+                        showPanel()
+                        return nil
+                    case "f":
+                        if toDoManager.promotePriorityTaskToFocus() {
+                            showPanel()
+                            return nil
+                        }
+                    default:
+                        break
+                    }
                 }
-                return event
+
+                switch event.keyCode {
+                case 126: // arrow up
+                    if toDoManager.promoteSelectionUp() {
+                        showPanel()
+                        return nil
+                    }
+                case 125: // arrow down
+                    if toDoManager.demoteSelectionDown() {
+                        showPanel()
+                        return nil
+                    }
+                default:
+                    break
+                }
             }
 
             if flags == [.command], event.keyCode == 36 {

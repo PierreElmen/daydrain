@@ -18,6 +18,8 @@
                 AA9999999999999999999999 /* FocusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9999999999999999999999 /* FocusModels.swift */; };
                 AA1010101010101010101010 /* OverflowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1010101010101010101010 /* OverflowManager.swift */; };
                 AA2020202020202020202020 /* InboxManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2020202020202020202020 /* InboxManager.swift */; };
+                AA3030303030303030303030 /* OverflowList.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3030303030303030303030 /* OverflowList.swift */; };
+                AA4040404040404040404040 /* InboxPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4040404040404040404040 /* InboxPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +34,8 @@
                 BB9999999999999999999999 /* FocusModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusModels.swift; sourceTree = "<group>"; };
                 BB1010101010101010101010 /* OverflowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverflowManager.swift; sourceTree = "<group>"; };
                 BB2020202020202020202020 /* InboxManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxManager.swift; sourceTree = "<group>"; };
+                BB3030303030303030303030 /* OverflowList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverflowList.swift; sourceTree = "<group>"; };
+                BB4040404040404040404040 /* InboxPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxPanel.swift; sourceTree = "<group>"; };
 		CC1111111111111111111111 /* DayDrain.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DayDrain.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD1111111111111111111111 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -65,6 +69,8 @@
                                 BB5555555555555555555555 /* MenuBarController.swift */,
                                 BB6666666666666666666666 /* ToDoManager.swift */,
                                 BB7777777777777777777777 /* ToDoPanel.swift */,
+                                BB3030303030303030303030 /* OverflowList.swift */,
+                                BB4040404040404040404040 /* InboxPanel.swift */,
                                 BB8888888888888888888888 /* WeekManager.swift */,
                                 BB9999999999999999999999 /* FocusModels.swift */,
                                 BB1010101010101010101010 /* OverflowManager.swift */,
@@ -161,6 +167,8 @@
                                 AA9999999999999999999999 /* FocusModels.swift in Sources */,
                                 AA1010101010101010101010 /* OverflowManager.swift in Sources */,
                                 AA2020202020202020202020 /* InboxManager.swift in Sources */,
+                                AA3030303030303030303030 /* OverflowList.swift in Sources */,
+                                AA4040404040404040404040 /* InboxPanel.swift in Sources */,
                         );
 			runOnlyForDeploymentPostprocessing = 0;
 		};

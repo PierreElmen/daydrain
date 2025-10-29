@@ -65,21 +65,26 @@ struct ToDoPanel: View {
                 
                 // Main focus content (no scroll)
                 if let selectedEntry = manager.dayEntries.first(where: { Calendar.current.isDate($0.date, inSameDayAs: manager.selectedDate) }) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(selectedEntry.snapshot.tasks) { task in
-                            FocusTaskRow(
-                                task: task,
-                                isHighlighted: manager.highlightedTaskID == task.id,
-                                onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
-                                onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
-                                onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
-                                onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) }
-                            )
-                            .focused($focusedTaskID, equals: task.id)
-                            .conditionalModifier(canDrag(task: task)) {
-                                $0.onDrag { NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString) }
+                    VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(selectedEntry.snapshot.tasks) { task in
+                                FocusTaskRow(
+                                    task: task,
+                                    isHighlighted: manager.highlightedTaskID == task.id,
+                                    onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
+                                    onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
+                                    onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
+                                    onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) }
+                                )
+                                .focused($focusedTaskID, equals: task.id)
+                                .conditionalModifier(canDrag(task: task)) {
+                                    $0.onDrag { NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString) }
+                                }
                             }
                         }
+
+                        OverflowList(manager: manager)
+                            .padding(.horizontal, 2)
                     }
                     .padding(.horizontal, 18)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -102,7 +107,17 @@ struct ToDoPanel: View {
                     }
                     .buttonStyle(CompactButtonStyle())
                     .help("Wind Down")
-                    
+
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            manager.toggleInboxPanelVisibility()
+                        }
+                    }) {
+                        Image(systemName: manager.isInboxPanelVisible ? "paperplane.fill" : "paperplane")
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                    .help("Toggle Inbox")
+
                     Button(action: openSettings) {
                         Image(systemName: "gear")
                     }
@@ -125,12 +140,22 @@ struct ToDoPanel: View {
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible ? 0 : -12)
 
+            if manager.isInboxPanelVisible {
+                InboxPanel(manager: manager, onClose: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        manager.hideInboxPanel()
+                    }
+                })
+                .zIndex(1)
+            }
+
             if manager.isWindDownPromptVisible {
                 WindDownPrompt(
                     onSelectMood: { manager.logMood($0) },
                     onCancel: { manager.dismissWindDownPrompt() }
                 )
                 .transition(.scale(scale: 0.94).combined(with: .opacity))
+                .zIndex(2)
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: manager.isWindDownPromptVisible)
@@ -138,6 +163,7 @@ struct ToDoPanel: View {
             isVisible = true
             focusedTaskID = manager.focusedTaskID
         }
+        .onChange(of: focusedTaskID) { manager.focusedTaskID = $0 }
         .onReceive(manager.$focusedTaskID) { focusedTaskID = $0 }
     }
     
