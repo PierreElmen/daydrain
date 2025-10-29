@@ -8,38 +8,40 @@ struct OverflowList: View {
     private var isCollapsed: Bool { manager.isOverflowCollapsed }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-
-            if !isCollapsed {
-                VStack(alignment: .leading, spacing: 8) {
-                    if tasks.isEmpty {
-                        Text("Nothing extra waiting.")
-                            .font(.system(size: 11, weight: .regular, design: .rounded))
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 6)
-                    } else {
-                        ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
-                            OverflowRow(
-                                task: task,
-                                onToggle: { manager.toggleOverflowTaskDone(at: index) },
-                                onTextChange: { manager.updateOverflowTaskText(at: index, text: $0) },
-                                onPromote: { _ = manager.promoteOverflowTaskToFocus(at: index) },
-                                onMoveToInbox: { _ = manager.moveOverflowTaskToInbox(at: index) },
-                                onDelete: { manager.removeOverflowTask(at: index) }
-                            )
-                            .opacity(task.done ? 0.55 : 1)
-                            .focused($focusedIndex, equals: index)
-                        }
+                .padding(.bottom, 10)
+            
+            // Clipping container - content slides out from underneath the header
+            VStack(alignment: .leading, spacing: 8) {
+                if tasks.isEmpty {
+                    Text("Nothing extra waiting.")
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 6)
+                } else {
+                    ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
+                        OverflowRow(
+                            task: task,
+                            onToggle: { manager.toggleOverflowTaskDone(at: index) },
+                            onTextChange: { manager.updateOverflowTaskText(at: index, text: $0) },
+                            onPromote: { _ = manager.promoteOverflowTaskToFocus(at: index) },
+                            onMoveToInbox: { _ = manager.moveOverflowTaskToInbox(at: index) },
+                            onDelete: { manager.removeOverflowTask(at: index) }
+                        )
+                        .opacity(task.done ? 0.55 : 1)
+                        .focused($focusedIndex, equals: index)
                     }
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.white.opacity(0.08))
-                )
-                .transition(.move(edge: .top).combined(with: .opacity))
             }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
+            .frame(height: isCollapsed ? 0 : nil)
+            .opacity(isCollapsed ? 0 : 1)
+            .clipped()
         }
         .fixedSize(horizontal: false, vertical: true)
         .onAppear { focusedIndex = manager.focusedOverflowIndex }
