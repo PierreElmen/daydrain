@@ -54,6 +54,16 @@ final class WeekManager {
         persist(snapshot: sanitized)
     }
 
+    func snapshot(for date: Date) -> DailyFocusSnapshot {
+        let key = isoFormatter.string(from: startOfDay(for: date))
+        if let cached = cachedSnapshots[key] {
+            return cached
+        }
+        let snapshot = loadSnapshot(for: date)
+        cachedSnapshots[key] = snapshot
+        return snapshot
+    }
+
     func moveTask(dayFrom: Date, dayTo: Date, taskIndex: Int) -> (DailyFocusSnapshot, DailyFocusSnapshot)? {
         let fromKey = isoFormatter.string(from: startOfDay(for: dayFrom))
         let toKey = isoFormatter.string(from: startOfDay(for: dayTo))
@@ -153,19 +163,29 @@ final class WeekManager {
         }
 
         let iso = isoFormatter.string(from: startOfDay(for: date))
-        return DailyFocusSnapshot(date: iso, tasks: tasks, mood: nil)
+        return DailyFocusSnapshot(date: iso, tasks: tasks, mood: nil, overflow: [], inbox: nil, uiState: DailyUIState())
     }
 
     private func sanitizedSnapshot(_ snapshot: DailyFocusSnapshot) -> DailyFocusSnapshot {
-        var sanitized = DailyFocusSnapshot(date: snapshot.date, tasks: Self.defaultTasks(), mood: snapshot.mood)
-        for index in sanitized.tasks.indices {
-            if let match = snapshot.tasks.first(where: { $0.id == sanitized.tasks[index].id }) {
-                sanitized.tasks[index].text = String(match.text.prefix(80))
-                sanitized.tasks[index].done = match.done
-                sanitized.tasks[index].note = String(match.note.prefix(200))
+        var sanitizedTasks = Self.defaultTasks()
+        for index in sanitizedTasks.indices {
+            if let match = snapshot.tasks.first(where: { $0.id == sanitizedTasks[index].id }) {
+                sanitizedTasks[index].text = String(match.text.prefix(80))
+                sanitizedTasks[index].done = match.done
+                sanitizedTasks[index].note = String(match.note.prefix(200))
             }
         }
-        return sanitized
+
+        let sanitizedOverflow = snapshot.overflow.map { $0.sanitized() }
+        let sanitizedInbox = snapshot.inbox?.map { $0.sanitized() }
+        let sanitizedUIState = snapshot.uiState.sanitized()
+
+        return DailyFocusSnapshot(date: snapshot.date,
+                                  tasks: sanitizedTasks,
+                                  mood: snapshot.mood,
+                                  overflow: sanitizedOverflow,
+                                  inbox: sanitizedInbox,
+                                  uiState: sanitizedUIState)
     }
 
     private func persist(snapshot: DailyFocusSnapshot, at url: URL? = nil) {

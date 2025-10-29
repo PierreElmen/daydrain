@@ -17,7 +17,14 @@ final class ToDoManager: ObservableObject {
     @Published private(set) var weekSummary: WeekSummary
     @Published private(set) var pulseToken: Int
     @Published private(set) var allTasksCompleted: Bool
+    @Published private(set) var overflowTasks: [OverflowTask]
+    @Published private(set) var isOverflowCollapsed: Bool
+    @Published private(set) var inboxTasks: [InboxTask]
+    @Published private(set) var isInboxCollapsed: Bool
     @Published var focusedTaskID: FocusTask.ID?
+    @Published var focusedOverflowIndex: Int?
+    @Published var focusedInboxIndex: Int?
+    @Published var isInboxPanelVisible: Bool
     @Published var isWindDownPromptVisible: Bool
 
     var onTaskDone: ((FocusTask, Date) -> Void)?
@@ -37,8 +44,15 @@ final class ToDoManager: ObservableObject {
     var averageMoodTooltip: String? { weekSummary.averageMoodTooltip }
 
     var weekDates: [Date] { dayEntries.map { $0.date } }
+    
+    var isFocusListFull: Bool {
+        let tasks = tasks(for: selectedDate)
+        return tasks.allSatisfy { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
 
     private let weekManager: WeekManager
+    private let overflowManager: OverflowManager
+    private let inboxManager: InboxManager
     private var midnightTimer: Timer?
     private var currentDay: Date
     private var calendar = Calendar.current
@@ -60,14 +74,23 @@ final class ToDoManager: ObservableObject {
 
     init(weekManager: WeekManager = WeekManager()) {
         self.weekManager = weekManager
+        self.overflowManager = OverflowManager(weekManager: weekManager)
+        self.inboxManager = InboxManager()
         self.currentDay = Self.startOfDay(for: Date())
         self.selectedDate = currentDay
         self.weekSummary = .empty
         self.pulseToken = 0
         self.allTasksCompleted = false
         self.dayEntries = []
+        self.overflowTasks = []
+        self.isOverflowCollapsed = true
+        self.inboxTasks = []
+        self.isInboxCollapsed = false
         self.isWindDownPromptVisible = false
+        self.isInboxPanelVisible = false
         self.selectedDayMood = nil
+        self.focusedOverflowIndex = nil
+        self.focusedInboxIndex = nil
 
         ensureCurrentWeekLoaded()
         scheduleMidnightRefresh()
@@ -93,6 +116,8 @@ final class ToDoManager: ObservableObject {
         guard let index = indexOfDay(date) else { return }
         selectedDate = dayEntries[index].date
         focusedTaskID = nil
+        focusedOverflowIndex = nil
+        focusedInboxIndex = nil
         updateSelectionState()
     }
 
@@ -100,6 +125,8 @@ final class ToDoManager: ObservableObject {
         guard let currentIndex = indexOfDay(selectedDate), currentIndex > 0 else { return }
         selectedDate = dayEntries[currentIndex - 1].date
         focusedTaskID = nil
+        focusedOverflowIndex = nil
+        focusedInboxIndex = nil
         updateSelectionState()
     }
 
@@ -107,6 +134,8 @@ final class ToDoManager: ObservableObject {
         guard let currentIndex = indexOfDay(selectedDate), currentIndex < dayEntries.count - 1 else { return }
         selectedDate = dayEntries[currentIndex + 1].date
         focusedTaskID = nil
+        focusedOverflowIndex = nil
+        focusedInboxIndex = nil
         updateSelectionState()
     }
 
@@ -169,6 +198,59 @@ final class ToDoManager: ObservableObject {
         updateSummary()
     }
 
+    func moveFocusTaskToOverflow(on date: Date, taskID: FocusTask.ID) {
+        guard let dayIndex = indexOfDay(date),
+              let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        
+        let task = dayEntries[dayIndex].snapshot.tasks[taskIndex]
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !task.done else { return }
+        
+        // Add to overflow
+        var snapshot = dayEntries[dayIndex].snapshot
+        snapshot.overflow.append(OverflowTask(text: trimmed, done: false))
+        
+        // Clear focus task
+        snapshot.tasks[taskIndex].text = ""
+        snapshot.tasks[taskIndex].note = ""
+        snapshot.tasks[taskIndex].done = false
+        
+        dayEntries[dayIndex].snapshot = snapshot
+        weekManager.save(snapshot: snapshot)
+        synchronizeSnapshot(for: date)
+        updateSelectionState()
+        updateSummary()
+    }
+
+    func moveFocusTaskToInbox(on date: Date, taskID: FocusTask.ID, priority: InboxPriority = .medium) {
+        guard let dayIndex = indexOfDay(date),
+              let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        
+        let task = dayEntries[dayIndex].snapshot.tasks[taskIndex]
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !task.done else { return }
+        
+        // Add to inbox
+        inboxManager.update { state in
+            if state.isCollapsed {
+                state.isCollapsed = false
+            }
+            state.tasks.append(InboxTask(text: trimmed, priority: priority, done: false))
+        }
+        
+        // Clear focus task
+        var snapshot = dayEntries[dayIndex].snapshot
+        snapshot.tasks[taskIndex].text = ""
+        snapshot.tasks[taskIndex].note = ""
+        snapshot.tasks[taskIndex].done = false
+        
+        dayEntries[dayIndex].snapshot = snapshot
+        weekManager.save(snapshot: snapshot)
+        synchronizeSnapshot(for: date)
+        updateSelectionState()
+        updateSummary()
+    }
+
     @discardableResult
     func quickAddTask() -> Bool {
         guard let dayIndex = indexOfDay(selectedDate) else { return false }
@@ -180,6 +262,350 @@ final class ToDoManager: ObservableObject {
             updateSummary()
             return true
         }
+        return false
+    }
+
+    // MARK: - Overflow
+
+    func resetOverflowToCollapsed() {
+        // Update the published state immediately
+        isOverflowCollapsed = true
+        focusedOverflowIndex = nil
+        
+        // Also update the persisted state if the day entry exists
+        if let dayIndex = indexOfDay(selectedDate) {
+            let updatedState = overflowManager.setCollapsed(true, on: selectedDate)
+            dayEntries[dayIndex].snapshot.uiState = updatedState
+            synchronizeSnapshot(for: selectedDate)
+        }
+    }
+
+    func toggleOverflowCollapsed() {
+        guard let dayIndex = indexOfDay(selectedDate) else { return }
+        let newValue = !dayEntries[dayIndex].snapshot.uiState.isOverflowCollapsed
+        let updatedState = overflowManager.setCollapsed(newValue, on: selectedDate)
+        dayEntries[dayIndex].snapshot.uiState = updatedState
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+        if updatedState.isOverflowCollapsed {
+            focusedOverflowIndex = nil
+        }
+    }
+
+    func addOverflowTask() {
+        guard indexOfDay(selectedDate) != nil else { return }
+        if isOverflowCollapsed {
+            let updatedState = overflowManager.setCollapsed(false, on: selectedDate)
+            if let dayIndex = indexOfDay(selectedDate) {
+                dayEntries[dayIndex].snapshot.uiState = updatedState
+            }
+        }
+        overflowManager.updateTasks(on: selectedDate) { tasks in
+            tasks.append(OverflowTask(text: "", done: false))
+        }
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+        focusedOverflowIndex = overflowTasks.indices.last
+    }
+
+    func updateOverflowTaskText(at index: Int, text: String) {
+        guard index >= 0 else { return }
+        overflowManager.updateTasks(on: selectedDate) { tasks in
+            guard tasks.indices.contains(index) else { return }
+            tasks[index].text = text
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                tasks[index].done = false
+            }
+        }
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+    }
+
+    func toggleOverflowTaskDone(at index: Int) {
+        overflowManager.updateTasks(on: selectedDate) { tasks in
+            guard tasks.indices.contains(index) else { return }
+            tasks[index].done.toggle()
+        }
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+    }
+
+    func removeOverflowTask(at index: Int) {
+        overflowManager.updateTasks(on: selectedDate) { tasks in
+            guard tasks.indices.contains(index) else { return }
+            tasks.remove(at: index)
+        }
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+        if let focusedIndex = focusedOverflowIndex {
+            if focusedIndex == index {
+                focusedOverflowIndex = nil
+            } else if focusedIndex > index {
+                focusedOverflowIndex = focusedIndex - 1
+            }
+        }
+    }
+
+    @discardableResult
+    func promoteOverflowTaskToFocus(at index: Int) -> Bool {
+        guard let dayIndex = indexOfDay(selectedDate) else { return false }
+        guard overflowTasks.indices.contains(index) else { return false }
+        let overflowTask = overflowTasks[index]
+        let trimmed = overflowTask.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        var snapshot = dayEntries[dayIndex].snapshot
+        guard let slotIndex = snapshot.tasks.firstIndex(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            return false
+        }
+
+        snapshot.tasks[slotIndex].text = String(trimmed.prefix(80))
+        snapshot.tasks[slotIndex].note = ""
+        snapshot.tasks[slotIndex].done = false
+
+        if snapshot.overflow.indices.contains(index) {
+            snapshot.overflow.remove(at: index)
+        }
+
+        dayEntries[dayIndex].snapshot = snapshot
+        weekManager.save(snapshot: snapshot)
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+        focusedTaskID = snapshot.tasks[slotIndex].id
+        focusedOverflowIndex = nil
+        updateSummary()
+        return true
+    }
+
+    @discardableResult
+    func moveOverflowTaskToInbox(at index: Int, priority: InboxPriority = .medium) -> Bool {
+        guard overflowTasks.indices.contains(index) else { return false }
+        let task = overflowTasks[index]
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        overflowManager.updateTasks(on: selectedDate) { tasks in
+            guard tasks.indices.contains(index) else { return }
+            tasks.remove(at: index)
+        }
+
+        inboxManager.update { state in
+            if state.isCollapsed {
+                state.isCollapsed = false
+            }
+            state.tasks.append(InboxTask(text: trimmed, priority: priority, done: false))
+        }
+
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+        focusedInboxIndex = inboxTasks.indices.last
+        focusedOverflowIndex = nil
+        return true
+    }
+
+    // MARK: - Inbox
+
+    func toggleInboxPanelVisibility() {
+        isInboxPanelVisible.toggle()
+        if !isInboxPanelVisible {
+            focusedInboxIndex = nil
+        }
+    }
+
+    func hideInboxPanel() {
+        isInboxPanelVisible = false
+        focusedInboxIndex = nil
+    }
+
+    func toggleInboxCollapsed() {
+        let updated = inboxManager.update { state in
+            state.isCollapsed.toggle()
+        }
+        inboxTasks = updated.tasks
+        isInboxCollapsed = updated.isCollapsed
+        if updated.isCollapsed {
+            focusedInboxIndex = nil
+        }
+    }
+
+    func addInboxTask(priority: InboxPriority = .medium) {
+        let updated = inboxManager.update { state in
+            if state.isCollapsed {
+                state.isCollapsed = false
+            }
+            state.tasks.append(InboxTask(text: "", priority: priority, done: false))
+        }
+        inboxTasks = updated.tasks
+        isInboxCollapsed = updated.isCollapsed
+        focusedInboxIndex = inboxTasks.indices.last
+    }
+
+    func updateInboxTaskText(at index: Int, text: String) {
+        let updated = inboxManager.update { state in
+            guard state.tasks.indices.contains(index) else { return }
+            state.tasks[index].text = text
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                state.tasks[index].done = false
+            }
+        }
+        inboxTasks = updated.tasks
+        isInboxCollapsed = updated.isCollapsed
+    }
+
+    func setInboxPriority(at index: Int, priority: InboxPriority) {
+        let updated = inboxManager.update { state in
+            guard state.tasks.indices.contains(index) else { return }
+            state.tasks[index].priority = priority
+        }
+        inboxTasks = updated.tasks
+        isInboxCollapsed = updated.isCollapsed
+    }
+
+    func toggleInboxTaskDone(at index: Int) {
+        let updated = inboxManager.update { state in
+            guard state.tasks.indices.contains(index) else { return }
+            state.tasks[index].done.toggle()
+        }
+        inboxTasks = updated.tasks
+        isInboxCollapsed = updated.isCollapsed
+    }
+
+    func removeInboxTask(at index: Int) {
+        let updated = inboxManager.update { state in
+            guard state.tasks.indices.contains(index) else { return }
+            state.tasks.remove(at: index)
+        }
+        inboxTasks = updated.tasks
+        isInboxCollapsed = updated.isCollapsed
+        if let focusedIndex = focusedInboxIndex {
+            if focusedIndex == index {
+                focusedInboxIndex = nil
+            } else if focusedIndex > index {
+                let newCount = inboxTasks.count
+                let candidate = focusedIndex - 1
+                focusedInboxIndex = candidate < newCount ? candidate : nil
+            }
+        }
+    }
+
+    @discardableResult
+    func moveInboxTaskToFocus(at index: Int) -> Bool {
+        guard let dayIndex = indexOfDay(selectedDate) else { return false }
+        guard inboxTasks.indices.contains(index) else { return false }
+        let task = inboxTasks[index]
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard let slotIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            return false
+        }
+
+        let updated = inboxManager.update { state in
+            guard state.tasks.indices.contains(index) else { return }
+            state.tasks.remove(at: index)
+        }
+
+        dayEntries[dayIndex].snapshot.tasks[slotIndex].text = String(trimmed.prefix(80))
+        dayEntries[dayIndex].snapshot.tasks[slotIndex].note = ""
+        dayEntries[dayIndex].snapshot.tasks[slotIndex].done = false
+        weekManager.save(snapshot: dayEntries[dayIndex].snapshot)
+
+        inboxTasks = updated.tasks
+        isInboxCollapsed = updated.isCollapsed
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+        focusedTaskID = dayEntries[dayIndex].snapshot.tasks[slotIndex].id
+        focusedInboxIndex = nil
+        updateSummary()
+        return true
+    }
+
+    @discardableResult
+    func moveInboxTaskToOverflow(at index: Int) -> Bool {
+        guard inboxTasks.indices.contains(index) else { return false }
+        let task = inboxTasks[index]
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let updatedState = inboxManager.update { state in
+            guard state.tasks.indices.contains(index) else { return }
+            state.tasks.remove(at: index)
+        }
+
+        overflowManager.updateTasks(on: selectedDate) { tasks in
+            tasks.append(OverflowTask(text: trimmed, done: false))
+        }
+
+        inboxTasks = updatedState.tasks
+        isInboxCollapsed = updatedState.isCollapsed
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+        focusedOverflowIndex = overflowTasks.indices.last
+        focusedInboxIndex = nil
+        return true
+    }
+
+    @discardableResult
+    func demoteFocusedTaskToOverflow() -> Bool {
+        guard let taskID = focusedTaskID, let dayIndex = indexOfDay(selectedDate) else { return false }
+        guard let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return false }
+        let task = dayEntries[dayIndex].snapshot.tasks[taskIndex]
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        overflowManager.updateTasks(on: selectedDate) { tasks in
+            tasks.append(OverflowTask(text: trimmed, done: false))
+        }
+
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].text = ""
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].note = ""
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].done = false
+        weekManager.save(snapshot: dayEntries[dayIndex].snapshot)
+
+        synchronizeSnapshot(for: selectedDate)
+        updateSelectionState()
+        focusedOverflowIndex = overflowTasks.indices.last
+        updateSummary()
+        return true
+    }
+
+    @discardableResult
+    func promoteSelectionUp() -> Bool {
+        if let index = focusedInboxIndex {
+            return moveInboxTaskToOverflow(at: index)
+        }
+        if let index = focusedOverflowIndex {
+            return promoteOverflowTaskToFocus(at: index)
+        }
+        return false
+    }
+
+    @discardableResult
+    func demoteSelectionDown() -> Bool {
+        if focusedTaskID != nil {
+            return demoteFocusedTaskToOverflow()
+        }
+        if let index = focusedOverflowIndex {
+            return moveOverflowTaskToInbox(at: index)
+        }
+        return false
+    }
+
+    @discardableResult
+    func promotePriorityTaskToFocus() -> Bool {
+        if let index = focusedOverflowIndex {
+            return promoteOverflowTaskToFocus(at: index)
+        }
+        if let index = focusedInboxIndex {
+            return moveInboxTaskToFocus(at: index)
+        }
+
+        if let overflowIndex = overflowTasks.firstIndex(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return promoteOverflowTaskToFocus(at: overflowIndex)
+        }
+
+        if let inboxIndex = inboxTasks.firstIndex(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return moveInboxTaskToFocus(at: inboxIndex)
+        }
+
         return false
     }
 
@@ -253,7 +679,9 @@ final class ToDoManager: ObservableObject {
     func refreshForCurrentDay() {
         let today = Self.startOfDay(for: Date())
         if today != currentDay {
+            let previousDay = currentDay
             currentDay = today
+            moveIncompleteOverflowToInbox(from: previousDay)
             ensureCurrentWeekLoaded()
         } else {
             loadWeek(containing: today)
@@ -261,6 +689,29 @@ final class ToDoManager: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func moveIncompleteOverflowToInbox(from date: Date) {
+        let overflowTasks = overflowManager.tasks(for: date)
+        let incompleteTasks = overflowTasks.filter { task in
+            !task.done && !task.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        
+        guard !incompleteTasks.isEmpty else { return }
+        
+        // Remove all incomplete overflow tasks from the previous day
+        overflowManager.updateTasks(on: date) { tasks in
+            tasks.removeAll { task in
+                !task.done && !task.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        }
+        
+        // Add them to the inbox
+        inboxManager.update { state in
+            for task in incompleteTasks {
+                state.tasks.append(InboxTask(text: task.text, priority: .medium, done: false))
+            }
+        }
+    }
 
     private func ensureCurrentWeekLoaded() {
         loadWeek(containing: currentDay)
@@ -290,6 +741,25 @@ final class ToDoManager: ObservableObject {
         selectedDayMood = mood(for: selectedDate)
         let tasks = tasks(for: selectedDate)
         allTasksCompleted = !tasks.isEmpty && tasks.allSatisfy { $0.done }
+
+        if let index = indexOfDay(selectedDate) {
+            overflowTasks = dayEntries[index].snapshot.overflow
+            isOverflowCollapsed = dayEntries[index].snapshot.uiState.isOverflowCollapsed
+        } else {
+            overflowTasks = []
+            isOverflowCollapsed = true
+        }
+
+        if let currentIndex = focusedOverflowIndex, !overflowTasks.indices.contains(currentIndex) {
+            focusedOverflowIndex = nil
+        }
+
+        let inboxState = inboxManager.state()
+        inboxTasks = inboxState.tasks
+        isInboxCollapsed = inboxState.isCollapsed
+        if let currentIndex = focusedInboxIndex, !inboxTasks.indices.contains(currentIndex) {
+            focusedInboxIndex = nil
+        }
     }
 
     private func updateSummary() {
@@ -326,5 +796,12 @@ final class ToDoManager: ObservableObject {
         let start = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)) ?? date
         let end = calendar.date(byAdding: .day, value: 6, to: start) ?? date
         return (calendar.startOfDay(for: start), calendar.startOfDay(for: end))
+    }
+
+    private func synchronizeSnapshot(for date: Date) {
+        let snapshot = weekManager.snapshot(for: date)
+        if let index = indexOfDay(date) {
+            dayEntries[index].snapshot = snapshot
+        }
     }
 }

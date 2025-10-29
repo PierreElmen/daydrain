@@ -13,6 +13,7 @@ struct WorkdaySettings: Codable {
     var endTime: TimeComponents
     var displayMode: DayDisplayMode.RawValue
     var showMenuValue: Bool = false
+    var persistOverflowState: Bool = false
 }
 
 /// Days of the week available for configuration. Calendar weekday values follow the user's locale
@@ -64,6 +65,7 @@ final class DayManager: ObservableObject {
     @Published var endTime: Date
     @Published var displayMode: DayDisplayMode
     @Published var showMenuValue: Bool
+    @Published var persistOverflowState: Bool
 
     @Published private(set) var progress: Double = 0
     @Published private(set) var isActive: Bool = false
@@ -88,12 +90,14 @@ final class DayManager: ObservableObject {
             self.endTime = DayManager.date(from: decoded.endTime) ?? defaults.endTime
             self.displayMode = DayDisplayMode(rawValue: decoded.displayMode) ?? .percentage
             self.showMenuValue = decoded.showMenuValue
+            self.persistOverflowState = decoded.persistOverflowState
         } else {
             self.selectedWeekdays = defaults.selectedWeekdays
             self.startTime = defaults.startTime
             self.endTime = defaults.endTime
             self.displayMode = defaults.displayMode
             self.showMenuValue = defaults.showMenuValue
+            self.persistOverflowState = defaults.persistOverflowState
         }
 
         bindSettingsChanges()
@@ -105,7 +109,7 @@ final class DayManager: ObservableObject {
         timer?.invalidate()
     }
 
-    private static func defaultSettings() -> (selectedWeekdays: Set<Weekday>, startTime: Date, endTime: Date, displayMode: DayDisplayMode, showMenuValue: Bool) {
+    private static func defaultSettings() -> (selectedWeekdays: Set<Weekday>, startTime: Date, endTime: Date, displayMode: DayDisplayMode, showMenuValue: Bool, persistOverflowState: Bool) {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: Date())
         let defaultStart = calendar.date(byAdding: DateComponents(hour: 9), to: startOfDay) ?? Date()
@@ -114,7 +118,8 @@ final class DayManager: ObservableObject {
                 startTime: defaultStart,
                 endTime: defaultEnd,
                 displayMode: .percentage,
-                showMenuValue: false)
+                showMenuValue: false,
+                persistOverflowState: false)
     }
 
     private func bindSettingsChanges() {
@@ -141,6 +146,11 @@ final class DayManager: ObservableObject {
         $showMenuValue
             .dropFirst()
             .sink { [weak self] _ in self?.persistAndRefresh() }
+            .store(in: &cancellables)
+
+        $persistOverflowState
+            .dropFirst()
+            .sink { [weak self] _ in self?.persist() }
             .store(in: &cancellables)
     }
 
@@ -283,7 +293,8 @@ final class DayManager: ObservableObject {
             startTime: DayManager.components(from: startTime),
             endTime: DayManager.components(from: endTime),
             displayMode: displayMode.rawValue,
-            showMenuValue: showMenuValue
+            showMenuValue: showMenuValue,
+            persistOverflowState: persistOverflowState
         )
 
         if let data = try? JSONEncoder().encode(settings) {
