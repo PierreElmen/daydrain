@@ -64,38 +64,41 @@ struct ToDoPanel: View {
                     }
                 
                 // Main focus content (no scroll)
-                if let selectedEntry = manager.dayEntries.first(where: { Calendar.current.isDate($0.date, inSameDayAs: manager.selectedDate) }) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(selectedEntry.snapshot.tasks) { task in
-                                FocusTaskRow(
-                                    task: task,
-                                    isHighlighted: manager.highlightedTaskID == task.id,
-                                    onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
-                                    onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
-                                    onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
-                                    onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) }
-                                )
-                                .focused($focusedTaskID, equals: task.id)
-                                .conditionalModifier(canDrag(task: task)) {
-                                    $0.onDrag { NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString) }
+                VStack(alignment: .leading, spacing: 0) {
+                    if let selectedEntry = manager.dayEntries.first(where: { Calendar.current.isDate($0.date, inSameDayAs: manager.selectedDate) }) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(selectedEntry.snapshot.tasks) { task in
+                                    FocusTaskRow(
+                                        task: task,
+                                        isHighlighted: manager.highlightedTaskID == task.id,
+                                        onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
+                                        onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
+                                        onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
+                                        onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) }
+                                    )
+                                    .focused($focusedTaskID, equals: task.id)
+                                    .conditionalModifier(canDrag(task: task)) {
+                                        $0.onDrag { NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString) }
+                                    }
                                 }
                             }
-                        }
 
-                        OverflowList(manager: manager)
-                            .padding(.horizontal, 2)
+                            OverflowList(manager: manager)
+                                .padding(.horizontal, 2)
+                        }
+                        .padding(.horizontal, 18)
+                        .id(selectedEntry.date)
+                        .onDrop(of: [UTType.utf8PlainText], delegate: DropDelegate(onDrop: { manager.handleDropPayload($0, to: selectedEntry.date) }))
                     }
-                    .padding(.horizontal, 18)
-                    .frame(maxWidth: .infinity, alignment: .top)
-                    .onDrop(of: [UTType.utf8PlainText], delegate: DropDelegate(onDrop: { manager.handleDropPayload($0, to: selectedEntry.date) }))
+                    
+                    Spacer(minLength: 16)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            focusedTaskID = nil
+                        }
                 }
-                
-                Spacer(minLength: 16)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        focusedTaskID = nil
-                    }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 
                 Divider()
                     .padding(.horizontal, 12)

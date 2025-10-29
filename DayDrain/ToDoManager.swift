@@ -621,7 +621,9 @@ final class ToDoManager: ObservableObject {
     func refreshForCurrentDay() {
         let today = Self.startOfDay(for: Date())
         if today != currentDay {
+            let previousDay = currentDay
             currentDay = today
+            moveIncompleteOverflowToInbox(from: previousDay)
             ensureCurrentWeekLoaded()
         } else {
             loadWeek(containing: today)
@@ -629,6 +631,29 @@ final class ToDoManager: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func moveIncompleteOverflowToInbox(from date: Date) {
+        let overflowTasks = overflowManager.tasks(for: date)
+        let incompleteTasks = overflowTasks.filter { task in
+            !task.done && !task.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        
+        guard !incompleteTasks.isEmpty else { return }
+        
+        // Remove all incomplete overflow tasks from the previous day
+        overflowManager.updateTasks(on: date) { tasks in
+            tasks.removeAll { task in
+                !task.done && !task.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        }
+        
+        // Add them to the inbox
+        inboxManager.update { state in
+            for task in incompleteTasks {
+                state.tasks.append(InboxTask(text: task.text, priority: .medium, done: false))
+            }
+        }
+    }
 
     private func ensureCurrentWeekLoaded() {
         loadWeek(containing: currentDay)
