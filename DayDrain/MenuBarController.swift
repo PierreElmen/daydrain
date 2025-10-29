@@ -218,13 +218,13 @@ final class MenuBarController {
                         }
                     case "i":
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            toDoManager.toggleInboxPanelVisibility()
+                            self.toDoManager.toggleInboxPanelVisibility()
                         }
                         showPanel()
                         return nil
                     case "o":
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            toDoManager.toggleOverflowCollapsed()
+                            self.toDoManager.toggleOverflowCollapsed()
                         }
                         showPanel()
                         return nil

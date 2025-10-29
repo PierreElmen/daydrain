@@ -509,7 +509,7 @@ final class ToDoManager: ObservableObject {
 
     @discardableResult
     func demoteSelectionDown() -> Bool {
-        if let taskID = focusedTaskID {
+        if focusedTaskID != nil {
             return demoteFocusedTaskToOverflow()
         }
         if let index = focusedOverflowIndex {
