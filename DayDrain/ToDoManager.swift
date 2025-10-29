@@ -1,34 +1,47 @@
 import Foundation
 import Combine
-
-struct FocusTask: Identifiable, Codable, Equatable {
-    let label: String
-    var text: String
-    var done: Bool
-    var note: String
-
-    var id: String { label }
-}
-
-struct DailyFocusSnapshot: Codable {
-    var date: String
-    var tasks: [FocusTask]
-}
+import SwiftUI
 
 @MainActor
 final class ToDoManager: ObservableObject {
-    @Published private(set) var tasks: [FocusTask]
-    @Published private(set) var pulseToken: Int = 0
-    @Published private(set) var allTasksCompleted: Bool = false
-    @Published var focusedTaskID: FocusTask.ID?
+    struct DayEntry: Identifiable {
+        var date: Date
+        var snapshot: DailyFocusSnapshot
 
-    private let fileManager = FileManager.default
-    private let directoryURL: URL
-    private let todayURL: URL
-    private let yesterdayURL: URL
-    private let tomorrowURL: URL
+        var id: String { snapshot.date }
+    }
+
+    @Published private(set) var dayEntries: [DayEntry]
+    @Published private(set) var selectedDate: Date
+    @Published private(set) var selectedDayMood: Int?
+    @Published private(set) var weekSummary: WeekSummary
+    @Published private(set) var pulseToken: Int
+    @Published private(set) var allTasksCompleted: Bool
+    @Published var focusedTaskID: FocusTask.ID?
+    @Published var isWindDownPromptVisible: Bool
+
+    var onTaskDone: ((FocusTask, Date) -> Void)?
+    var onTaskMoved: ((FocusTask, Date, Date) -> Void)?
+    var onMoodLogged: ((Int, Date) -> Void)?
+
+    var tooltip: String { "Tackle the hardest one first." }
+
+    var highlightedTaskID: FocusTask.ID? {
+        let tasks = tasks(for: selectedDate)
+        return tasks.first(where: { !$0.done && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.id
+            ?? tasks.first?.id
+    }
+
+    var completionSummaryText: String { weekSummary.completionText }
+    var averageMoodEmoji: String? { weekSummary.averageMoodEmoji }
+    var averageMoodTooltip: String? { weekSummary.averageMoodTooltip }
+
+    var weekDates: [Date] { dayEntries.map { $0.date } }
+
+    private let weekManager: WeekManager
     private var midnightTimer: Timer?
     private var currentDay: Date
+    private var calendar = Calendar.current
 
     private lazy var isoFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -38,18 +51,25 @@ final class ToDoManager: ObservableObject {
         return formatter
     }()
 
-    init() {
-        let directory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        directoryURL = directory.appendingPathComponent("DayDrain", isDirectory: true)
-        todayURL = directoryURL.appendingPathComponent("today.json", isDirectory: false)
-        yesterdayURL = directoryURL.appendingPathComponent("yesterday.json", isDirectory: false)
-        tomorrowURL = directoryURL.appendingPathComponent("tomorrow.json", isDirectory: false)
+    private lazy var navFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE d MMM"
+        formatter.locale = Locale.current
+        return formatter
+    }()
 
-        tasks = Self.defaultTasks()
-        currentDay = Self.startOfDay(for: Date())
+    init(weekManager: WeekManager = WeekManager()) {
+        self.weekManager = weekManager
+        self.currentDay = Self.startOfDay(for: Date())
+        self.selectedDate = currentDay
+        self.weekSummary = .empty
+        self.pulseToken = 0
+        self.allTasksCompleted = false
+        self.dayEntries = []
+        self.isWindDownPromptVisible = false
+        self.selectedDayMood = nil
 
-        ensureStorageDirectoryExists()
-        refreshForCurrentDay()
+        ensureCurrentWeekLoaded()
         scheduleMidnightRefresh()
     }
 
@@ -57,50 +77,107 @@ final class ToDoManager: ObservableObject {
         midnightTimer?.invalidate()
     }
 
-    var tooltip: String { "Tackle the hardest one first." }
-
-    var highlightedTaskID: FocusTask.ID? {
-        tasks.first(where: { !$0.done })?.id
-            ?? tasks.first?.id
-    }
-
-    func toggleTaskCompletion(for taskID: FocusTask.ID) {
-        guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
-        tasks[index].done.toggle()
-        if tasks[index].done {
-            triggerPulse()
+    func descriptor(for date: Date) -> String {
+        if calendar.isDateInToday(date) {
+            return "Today · \(navFormatter.string(from: date))"
+        } else if calendar.isDateInTomorrow(date) {
+            return "Tomorrow · \(navFormatter.string(from: date))"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday · \(navFormatter.string(from: date))"
+        } else {
+            return navFormatter.string(from: date)
         }
-        updateCompletionState()
-        persistToday()
     }
 
-    func updateTaskText(for taskID: FocusTask.ID, text: String) {
-        guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
+    func select(date: Date) {
+        guard let index = indexOfDay(date) else { return }
+        selectedDate = dayEntries[index].date
+        focusedTaskID = nil
+        updateSelectionState()
+    }
+
+    func goToPreviousDay() {
+        guard let currentIndex = indexOfDay(selectedDate), currentIndex > 0 else { return }
+        selectedDate = dayEntries[currentIndex - 1].date
+        focusedTaskID = nil
+        updateSelectionState()
+    }
+
+    func goToNextDay() {
+        guard let currentIndex = indexOfDay(selectedDate), currentIndex < dayEntries.count - 1 else { return }
+        selectedDate = dayEntries[currentIndex + 1].date
+        focusedTaskID = nil
+        updateSelectionState()
+    }
+
+    func tasks(for date: Date) -> [FocusTask] {
+        guard let index = indexOfDay(date) else { return [] }
+        return dayEntries[index].snapshot.tasks
+    }
+
+    func mood(for date: Date) -> Int? {
+        guard let index = indexOfDay(date) else { return nil }
+        return dayEntries[index].snapshot.mood
+    }
+
+    func toggleTaskCompletion(on date: Date, taskID: FocusTask.ID) {
+        guard let dayIndex = indexOfDay(date),
+              let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].done.toggle()
+        if dayEntries[dayIndex].snapshot.tasks[taskIndex].done {
+            pulseToken += 1
+            onTaskDone?(dayEntries[dayIndex].snapshot.tasks[taskIndex], date)
+        }
+        weekManager.save(snapshot: dayEntries[dayIndex].snapshot)
+        updateSelectionState()
+        updateSummary()
+    }
+
+    func updateTaskText(on date: Date, taskID: FocusTask.ID, text: String) {
+        guard let dayIndex = indexOfDay(date),
+              let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+
         let trimmed = String(text.prefix(80))
-        tasks[index].text = trimmed
-        if trimmed.isEmpty {
-            tasks[index].done = false
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].text = trimmed
+        if trimmed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            dayEntries[dayIndex].snapshot.tasks[taskIndex].done = false
+            dayEntries[dayIndex].snapshot.tasks[taskIndex].note = ""
         }
-        updateCompletionState()
-        persistToday()
+        weekManager.save(snapshot: dayEntries[dayIndex].snapshot)
+        updateSelectionState()
+        updateSummary()
     }
 
-    func clearTask(_ taskID: FocusTask.ID) {
-        guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
-        tasks[index].text = ""
-        tasks[index].note = ""
-        tasks[index].done = false
-        updateCompletionState()
-        persistToday()
+    func updateNote(on date: Date, taskID: FocusTask.ID, note: String) {
+        guard let dayIndex = indexOfDay(date),
+              let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].note = String(note.prefix(200))
+        weekManager.save(snapshot: dayEntries[dayIndex].snapshot)
+    }
+
+    func clearTask(on date: Date, taskID: FocusTask.ID) {
+        guard let dayIndex = indexOfDay(date),
+              let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].text = ""
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].note = ""
+        dayEntries[dayIndex].snapshot.tasks[taskIndex].done = false
+        weekManager.save(snapshot: dayEntries[dayIndex].snapshot)
+        updateSelectionState()
+        updateSummary()
     }
 
     @discardableResult
     func quickAddTask() -> Bool {
-        if let index = tasks.firstIndex(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-            tasks[index].done = false
-            updateCompletionState()
-            focusedTaskID = tasks[index].id
-            persistToday()
+        guard let dayIndex = indexOfDay(selectedDate) else { return false }
+        if let slot = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            dayEntries[dayIndex].snapshot.tasks[slot].done = false
+            weekManager.save(snapshot: dayEntries[dayIndex].snapshot)
+            focusedTaskID = dayEntries[dayIndex].snapshot.tasks[slot].id
+            updateSelectionState()
+            updateSummary()
             return true
         }
         return false
@@ -108,88 +185,120 @@ final class ToDoManager: ObservableObject {
 
     @discardableResult
     func markTopIncompleteTaskDone() -> Bool {
-        guard let task = tasks.first(where: { !$0.done }) else { return false }
-        toggleTaskCompletion(for: task.id)
+        guard let dayIndex = indexOfDay(selectedDate) else { return false }
+        if let task = dayEntries[dayIndex].snapshot.tasks.first(where: { !$0.done }) {
+            toggleTaskCompletion(on: selectedDate, taskID: task.id)
+            return true
+        }
+        return false
+    }
+
+    @discardableResult
+    func moveTask(from sourceDate: Date, to targetDate: Date, taskID: FocusTask.ID) -> Bool {
+        guard calendar.compare(targetDate, to: sourceDate, toGranularity: .day) == .orderedDescending else { return false }
+        guard let sourceIndex = indexOfDay(sourceDate),
+              let targetIndex = indexOfDay(targetDate),
+              let taskIndex = dayEntries[sourceIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return false }
+
+        let task = dayEntries[sourceIndex].snapshot.tasks[taskIndex]
+        guard let (updatedSource, updatedTarget) = weekManager.moveTask(dayFrom: sourceDate, dayTo: targetDate, taskIndex: taskIndex) else {
+            return false
+        }
+
+        dayEntries[sourceIndex].snapshot = updatedSource
+        dayEntries[targetIndex].snapshot = updatedTarget
+
+        onTaskMoved?(task, sourceDate, targetDate)
+        updateSelectionState()
+        updateSummary()
         return true
+    }
+
+    func triggerWindDownPrompt() {
+        selectedDate = currentDay
+        updateSelectionState()
+        withAnimation { isWindDownPromptVisible = true }
+    }
+
+    func dismissWindDownPrompt() {
+        withAnimation { isWindDownPromptVisible = false }
+    }
+
+    func logMood(_ mood: Int) {
+        let today = currentDay
+        guard let index = indexOfDay(today) else { return }
+        dayEntries[index].snapshot.mood = mood
+        weekManager.save(snapshot: dayEntries[index].snapshot)
+        onMoodLogged?(mood, today)
+        updateSummary()
+        updateSelectionState()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                self?.isWindDownPromptVisible = false
+            }
+        }
+    }
+
+    func handleDropPayload(_ payload: String, to targetDate: Date) {
+        let components = payload.split(separator: "|", maxSplits: 1).map(String.init)
+        guard components.count == 2,
+              let sourceDate = isoFormatter.date(from: components[0]) else { return }
+        _ = moveTask(from: sourceDate, to: targetDate, taskID: components[1])
+    }
+
+    func dragPayload(for date: Date, taskID: FocusTask.ID) -> String {
+        "\(isoFormatter.string(from: date))|\(taskID)"
     }
 
     func refreshForCurrentDay() {
         let today = Self.startOfDay(for: Date())
-        currentDay = today
-
-        let todayString = isoFormatter.string(from: today)
-        let yesterday = Self.adjustDay(today, by: -1)
-        let yesterdayString = isoFormatter.string(from: yesterday)
-        let tomorrow = Self.adjustDay(today, by: 1)
-        let tomorrowString = isoFormatter.string(from: tomorrow)
-
-        ensureStorageDirectoryExists()
-
-        var previousDaySnapshot: DailyFocusSnapshot?
-        if let storedYesterday = loadSnapshot(from: yesterdayURL), storedYesterday.date == yesterdayString {
-            previousDaySnapshot = storedYesterday
-        }
-
-        if previousDaySnapshot == nil,
-           let staleToday = loadSnapshot(from: todayURL), staleToday.date == yesterdayString {
-            previousDaySnapshot = staleToday
-            save(snapshot: staleToday, to: yesterdayURL)
-        }
-
-        if let staleToday = loadSnapshot(from: todayURL), staleToday.date != todayString {
-            if let staleDate = isoFormatter.date(from: staleToday.date), staleDate < today {
-                save(snapshot: staleToday, to: yesterdayURL)
-            } else if let staleDate = isoFormatter.date(from: staleToday.date), staleDate > today {
-                save(snapshot: staleToday, to: tomorrowURL)
-            }
-        }
-
-        if let existingToday = loadSnapshot(from: todayURL), existingToday.date == todayString {
-            tasks = sanitizedTasks(existingToday.tasks)
-            updateCompletionState()
-        } else if let prefill = loadSnapshot(from: tomorrowURL), prefill.date == todayString {
-            var sanitized = sanitizedTasks(prefill.tasks)
-            for index in sanitized.indices {
-                sanitized[index].done = false
-            }
-            tasks = sanitized
-            updateCompletionState()
-            save(snapshot: DailyFocusSnapshot(date: tomorrowString, tasks: Self.defaultTasks()), to: tomorrowURL)
-            persistToday()
+        if today != currentDay {
+            currentDay = today
+            ensureCurrentWeekLoaded()
         } else {
-            var newTasks = Self.defaultTasks()
-            if let carryOver = previousDaySnapshot {
-                var slotIndex = 0
-                for task in carryOver.tasks where !task.done {
-                    let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty, slotIndex < newTasks.count else { continue }
-                    newTasks[slotIndex].text = String(trimmed.prefix(80))
-                    newTasks[slotIndex].note = task.note
-                    newTasks[slotIndex].done = false
-                    slotIndex += 1
-                }
-            }
-            tasks = newTasks
-            updateCompletionState()
-            persistToday()
-        }
-
-        if let snapshot = previousDaySnapshot {
-            save(snapshot: snapshot, to: yesterdayURL)
-        } else {
-            save(snapshot: DailyFocusSnapshot(date: yesterdayString, tasks: Self.defaultTasks()), to: yesterdayURL)
-        }
-
-        if let tomorrowSnapshot = loadSnapshot(from: tomorrowURL), tomorrowSnapshot.date == tomorrowString {
-            // keep user-provided placeholder
-        } else {
-            save(snapshot: DailyFocusSnapshot(date: tomorrowString, tasks: Self.defaultTasks()), to: tomorrowURL)
+            loadWeek(containing: today)
         }
     }
 
-    private func ensureStorageDirectoryExists() {
-        if !fileManager.fileExists(atPath: directoryURL.path) {
-            try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    // MARK: - Private
+
+    private func ensureCurrentWeekLoaded() {
+        loadWeek(containing: currentDay)
+    }
+
+    private func loadWeek(containing date: Date) {
+        let bounds = Self.weekBounds(containing: date)
+        let snapshots = weekManager.fetchDays(startDate: bounds.start, endDate: bounds.end)
+        dayEntries = snapshots.compactMap { snapshot in
+            guard let day = isoFormatter.date(from: snapshot.date) else { return nil }
+            return DayEntry(date: day, snapshot: snapshot)
+        }.sorted { $0.date < $1.date }
+
+        if let index = indexOfDay(selectedDate) {
+            selectedDate = dayEntries[index].date
+        } else if let todayIndex = indexOfDay(currentDay) {
+            selectedDate = dayEntries[todayIndex].date
+        } else if let first = dayEntries.first {
+            selectedDate = first.date
+        }
+
+        updateSelectionState()
+        updateSummary()
+    }
+
+    private func updateSelectionState() {
+        selectedDayMood = mood(for: selectedDate)
+        let tasks = tasks(for: selectedDate)
+        allTasksCompleted = !tasks.isEmpty && tasks.allSatisfy { $0.done }
+    }
+
+    private func updateSummary() {
+        weekSummary = weekManager.summaryStats()
+    }
+
+    private func indexOfDay(_ date: Date) -> Int? {
+        dayEntries.firstIndex { entry in
+            calendar.isDate(entry.date, inSameDayAs: date)
         }
     }
 
@@ -207,57 +316,15 @@ final class ToDoManager: ObservableObject {
         }
     }
 
-    private func triggerPulse() {
-        pulseToken += 1
-    }
-
-    private func updateCompletionState() {
-        allTasksCompleted = tasks.allSatisfy { $0.done }
-    }
-
-    private func persistToday() {
-        let snapshot = DailyFocusSnapshot(date: isoFormatter.string(from: currentDay), tasks: tasks)
-        save(snapshot: snapshot, to: todayURL)
-    }
-
-    private func save(snapshot: DailyFocusSnapshot, to url: URL) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(snapshot) {
-            try? data.write(to: url, options: .atomic)
-        }
-    }
-
-    private func loadSnapshot(from url: URL) -> DailyFocusSnapshot? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(DailyFocusSnapshot.self, from: data)
-    }
-
-    private func sanitizedTasks(_ tasks: [FocusTask]) -> [FocusTask] {
-        var sanitized = Self.defaultTasks()
-        for index in sanitized.indices {
-            if let match = tasks.first(where: { $0.id == sanitized[index].id }) {
-                sanitized[index].text = String(match.text.prefix(80))
-                sanitized[index].done = match.done
-                sanitized[index].note = match.note
-            }
-        }
-        return sanitized
-    }
-
     private static func startOfDay(for date: Date) -> Date {
         Calendar.current.startOfDay(for: date)
     }
 
-    private static func adjustDay(_ date: Date, by days: Int) -> Date {
-        Calendar.current.date(byAdding: .day, value: days, to: date) ?? date
-    }
-
-    private static func defaultTasks() -> [FocusTask] {
-        [
-            FocusTask(label: "Focus 1", text: "", done: false, note: ""),
-            FocusTask(label: "Focus 2", text: "", done: false, note: ""),
-            FocusTask(label: "Focus 3", text: "", done: false, note: "")
-        ]
+    private static func weekBounds(containing date: Date) -> (start: Date, end: Date) {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone.current
+        let start = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)) ?? date
+        let end = calendar.date(byAdding: .day, value: 6, to: start) ?? date
+        return (calendar.startOfDay(for: start), calendar.startOfDay(for: end))
     }
 }

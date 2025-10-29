@@ -44,6 +44,11 @@ final class MenuBarController {
         panelPopover.animates = true
 
         setupBindings()
+        dayManager.onDayComplete = { [weak self] in
+            Task { @MainActor in
+                self?.toDoManager.triggerWindDownPrompt()
+            }
+        }
         registerShortcuts()
         updateStatusBarView()
     }
@@ -144,7 +149,12 @@ final class MenuBarController {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if event.type == .rightMouseUp || event.type == .rightMouseDown || flags.contains(.control) {
             hidePanel()
-            statusItem.popUpMenu(contextMenu)
+            // Use the status item's menu property instead of deprecated popUpMenu(_:)
+            statusItem.menu = contextMenu
+            // AppKit will present the menu for the click; clear it after to keep left-click behavior custom.
+            DispatchQueue.main.async { [weak self] in
+                self?.statusItem.menu = nil
+            }
         } else {
             togglePanel()
         }
