@@ -10,27 +10,44 @@ final class MenuBarController {
     private var cancellables: Set<AnyCancellable> = []
     private let dayManager: DayManager
     private var settingsWindowController: NSWindowController?
-    private let barWidth: CGFloat = 70
+    private var latestProgress: Double = 0
+    private var latestMenuValue: String = ""
+    private let statusItemHorizontalPadding: CGFloat = 8
+    private var currentStatusItemLength: CGFloat = 0
 
     init(dayManager: DayManager) {
         self.dayManager = dayManager
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.length = barWidth + 12
         statusItem.menu = buildMenu()
         statusItem.isVisible = true
         statusItem.button?.toolTip = "DayDrain"
 
         NSApp.setActivationPolicy(.accessory)
 
+        latestProgress = max(0, min(1, dayManager.progress))
+        latestMenuValue = dayManager.menuValueText
+        currentStatusItemLength = calculatedStatusItemLength(for: latestMenuValue)
+        statusItem.length = currentStatusItemLength
+
         setupBindings()
-        updateProgress(dayManager.progress)
+        updateStatusBarView()
     }
 
     private func setupBindings() {
         dayManager.$progress
             .receive(on: RunLoop.main)
             .sink { [weak self] progress in
-                self?.updateProgress(progress)
+                let clamped = max(0, min(1, progress))
+                self?.latestProgress = clamped
+                self?.updateStatusBarView()
+            }
+            .store(in: &cancellables)
+
+        dayManager.$menuValueText
+            .receive(on: RunLoop.main)
+            .sink { [weak self] text in
+                self?.latestMenuValue = text
+                self?.updateStatusBarView()
             }
             .store(in: &cancellables)
 
@@ -51,10 +68,9 @@ final class MenuBarController {
             .store(in: &cancellables)
     }
 
-    private func updateProgress(_ progress: Double) {
+    private func updateStatusBarView() {
         guard let button = statusItem.button else { return }
-        let clamped = max(0, min(1, progress))
-        let view = StatusBarView(progress: clamped)
+        let view = StatusBarView(progress: latestProgress, menuLabel: latestMenuValue)
 
         if let hostingView {
             hostingView.rootView = view
@@ -67,11 +83,37 @@ final class MenuBarController {
                 hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
                 hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
                 hosting.topAnchor.constraint(equalTo: button.topAnchor, constant: 2),
-                hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -2),
-                hosting.widthAnchor.constraint(equalToConstant: barWidth)
+                hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -2)
             ])
 
             self.hostingView = hosting
+        }
+
+        let newLength = calculatedStatusItemLength(for: latestMenuValue)
+        updateStatusItemLengthIfNeeded(newLength)
+    }
+
+    private func calculatedStatusItemLength(for label: String) -> CGFloat {
+        let labelWidth = measuredLabelWidth(for: label)
+        let spacing = labelWidth > 0 ? StatusBarView.Constants.labelSpacing : 0
+        let meterWidth = StatusBarView.Constants.barWidth
+        return meterWidth + spacing + labelWidth + statusItemHorizontalPadding
+    }
+
+    private func measuredLabelWidth(for text: String) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let width = (text as NSString).size(withAttributes: attributes).width
+        return ceil(width)
+    }
+
+    private func updateStatusItemLengthIfNeeded(_ newLength: CGFloat) {
+        guard abs(currentStatusItemLength - newLength) > 0.5 else { return }
+        currentStatusItemLength = newLength
+
+        DispatchQueue.main.async { [weak self] in
+            self?.statusItem.length = newLength
         }
     }
 

@@ -38,7 +38,9 @@ private struct GeneralSettingsView: View {
             }
 
             Section(header: Text("Display")) {
-                Picker("Tooltip", selection: $dayManager.displayMode) {
+                Toggle("Show value next to the bar", isOn: $dayManager.showMenuValue)
+
+                Picker("Value format", selection: $dayManager.displayMode) {
                     ForEach(DayDisplayMode.allCases) { mode in
                         Text(mode.title).tag(mode)
                     }

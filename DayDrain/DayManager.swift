@@ -12,6 +12,7 @@ struct WorkdaySettings: Codable {
     var startTime: TimeComponents
     var endTime: TimeComponents
     var displayMode: DayDisplayMode.RawValue
+    var showMenuValue: Bool = false
 }
 
 /// Days of the week available for configuration. Calendar weekday values follow the user's locale
@@ -62,10 +63,12 @@ final class DayManager: ObservableObject {
     @Published var startTime: Date
     @Published var endTime: Date
     @Published var displayMode: DayDisplayMode
+    @Published var showMenuValue: Bool
 
     @Published private(set) var progress: Double = 0
     @Published private(set) var isActive: Bool = false
     @Published private(set) var displayText: String = ""
+    @Published private(set) var menuValueText: String = ""
 
     private var timer: Timer?
     private var cancellables: Set<AnyCancellable> = []
@@ -81,11 +84,13 @@ final class DayManager: ObservableObject {
             self.startTime = DayManager.date(from: decoded.startTime) ?? defaults.startTime
             self.endTime = DayManager.date(from: decoded.endTime) ?? defaults.endTime
             self.displayMode = DayDisplayMode(rawValue: decoded.displayMode) ?? .percentage
+            self.showMenuValue = decoded.showMenuValue
         } else {
             self.selectedWeekdays = defaults.selectedWeekdays
             self.startTime = defaults.startTime
             self.endTime = defaults.endTime
             self.displayMode = defaults.displayMode
+            self.showMenuValue = defaults.showMenuValue
         }
 
         bindSettingsChanges()
@@ -97,7 +102,7 @@ final class DayManager: ObservableObject {
         timer?.invalidate()
     }
 
-    private static func defaultSettings() -> (selectedWeekdays: Set<Weekday>, startTime: Date, endTime: Date, displayMode: DayDisplayMode) {
+    private static func defaultSettings() -> (selectedWeekdays: Set<Weekday>, startTime: Date, endTime: Date, displayMode: DayDisplayMode, showMenuValue: Bool) {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: Date())
         let defaultStart = calendar.date(byAdding: DateComponents(hour: 9), to: startOfDay) ?? Date()
@@ -105,7 +110,8 @@ final class DayManager: ObservableObject {
         return (selectedWeekdays: Set([.monday, .tuesday, .wednesday, .thursday, .friday]),
                 startTime: defaultStart,
                 endTime: defaultEnd,
-                displayMode: .percentage)
+                displayMode: .percentage,
+                showMenuValue: false)
     }
 
     private func bindSettingsChanges() {
@@ -128,6 +134,11 @@ final class DayManager: ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in self?.persistAndRefresh() }
             .store(in: &cancellables)
+
+        $showMenuValue
+            .dropFirst()
+            .sink { [weak self] _ in self?.persistAndRefresh() }
+            .store(in: &cancellables)
     }
 
     private func configureTimer() {
@@ -144,6 +155,7 @@ final class DayManager: ObservableObject {
         let now = Date()
         let isWorkday = shouldDisplay(on: now)
         isActive = isWorkday
+        menuValueText = ""
 
         guard let startOfToday = combine(date: now, with: startTime),
               let endOfToday = combine(date: now, with: endTime) else {
@@ -167,12 +179,20 @@ final class DayManager: ObservableObject {
         if now < startOfToday {
             progress = 1
             displayText = "Workday starts at \(formattedTime(startOfToday))"
+            if showMenuValue {
+                let total = endOfToday.timeIntervalSince(startOfToday)
+                menuValueText = formattedMenuValue(remaining: total, total: total)
+            }
             return
         }
 
         if now >= endOfToday {
             progress = 0
             displayText = "Workday completed"
+            if showMenuValue {
+                let total = endOfToday.timeIntervalSince(startOfToday)
+                menuValueText = formattedMenuValue(remaining: 0, total: total)
+            }
             return
         }
 
@@ -180,6 +200,9 @@ final class DayManager: ObservableObject {
         let remaining = max(0, endOfToday.timeIntervalSince(now))
         progress = total == 0 ? 0 : min(1, remaining / total)
         displayText = formattedDisplayText(remaining: remaining, total: total)
+        if showMenuValue {
+            menuValueText = formattedMenuValue(remaining: remaining, total: total)
+        }
     }
 
     private func combine(date: Date, with time: Date) -> Date? {
@@ -217,9 +240,32 @@ final class DayManager: ObservableObject {
         }
     }
 
+    private func formattedMenuValue(remaining: TimeInterval, total: TimeInterval) -> String {
+        switch displayMode {
+        case .percentage:
+            let percentage = total == 0 ? 0 : (remaining / total)
+            let value = Int(round(percentage * 100))
+            return "\(value)%"
+        case .hours:
+            let hours = remaining / 3600
+            return String(format: "%.1fh", hours)
+        case .hoursAndMinutes:
+            let hours = Int(remaining / 3600)
+            let minutes = Int((remaining.truncatingRemainder(dividingBy: 3600)) / 60)
+            if hours > 0 {
+                return "\(hours)h \(minutes)m"
+            } else {
+                return "\(minutes)m"
+            }
+        }
+    }
+
     private func persistAndRefresh() {
-        persist()
-        refresh()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.persist()
+            self.refresh()
+        }
     }
 
     private func persist() {
@@ -227,7 +273,8 @@ final class DayManager: ObservableObject {
             selectedWeekdays: selectedWeekdays.map { $0.rawValue },
             startTime: DayManager.components(from: startTime),
             endTime: DayManager.components(from: endTime),
-            displayMode: displayMode.rawValue
+            displayMode: displayMode.rawValue,
+            showMenuValue: showMenuValue
         )
 
         if let data = try? JSONEncoder().encode(settings) {
