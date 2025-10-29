@@ -46,6 +46,10 @@ struct ToDoPanel: View {
                 .padding(.horizontal, 18)
                 .padding(.top, 16)
                 .padding(.bottom, 12)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    focusedTaskID = nil
+                }
                 
                 // Subtitle
                 Text("Focus on the most important tasks")
@@ -54,6 +58,10 @@ struct ToDoPanel: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 18)
                     .padding(.bottom, 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        focusedTaskID = nil
+                    }
                 
                 // Main focus content (no scroll)
                 if let selectedEntry = manager.dayEntries.first(where: { Calendar.current.isDate($0.date, inSameDayAs: manager.selectedDate) }) {
@@ -79,6 +87,10 @@ struct ToDoPanel: View {
                 }
                 
                 Spacer()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        focusedTaskID = nil
+                    }
                 
                 Divider()
                     .padding(.horizontal, 12)
