@@ -184,16 +184,16 @@ private struct InboxRow: View {
                 priorityMenu
 
                 Button(action: onPromote) {
-                    Image(systemName: "arrow.up.circle")
+                    Image(systemName: "flame.fill")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(Color.accentColor.opacity(0.85))
+                        .foregroundColor(Color.secondary.opacity(0.75))
                 }
                 .buttonStyle(.plain)
                 .help("Move to Focus")
 
                 Button(action: onDemote) {
-                    Image(systemName: "arrow.down.circle")
-                        .font(.system(size: 14, weight: .medium))
+                    Image(systemName: "tray.fill")
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color.secondary.opacity(0.75))
                 }
                 .buttonStyle(.plain)

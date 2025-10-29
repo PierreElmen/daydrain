@@ -44,6 +44,11 @@ final class ToDoManager: ObservableObject {
     var averageMoodTooltip: String? { weekSummary.averageMoodTooltip }
 
     var weekDates: [Date] { dayEntries.map { $0.date } }
+    
+    var isFocusListFull: Bool {
+        let tasks = tasks(for: selectedDate)
+        return tasks.allSatisfy { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
 
     private let weekManager: WeekManager
     private let overflowManager: OverflowManager
@@ -189,6 +194,59 @@ final class ToDoManager: ObservableObject {
         dayEntries[dayIndex].snapshot.tasks[taskIndex].note = ""
         dayEntries[dayIndex].snapshot.tasks[taskIndex].done = false
         weekManager.save(snapshot: dayEntries[dayIndex].snapshot)
+        updateSelectionState()
+        updateSummary()
+    }
+
+    func moveFocusTaskToOverflow(on date: Date, taskID: FocusTask.ID) {
+        guard let dayIndex = indexOfDay(date),
+              let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        
+        let task = dayEntries[dayIndex].snapshot.tasks[taskIndex]
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !task.done else { return }
+        
+        // Add to overflow
+        var snapshot = dayEntries[dayIndex].snapshot
+        snapshot.overflow.append(OverflowTask(text: trimmed, done: false))
+        
+        // Clear focus task
+        snapshot.tasks[taskIndex].text = ""
+        snapshot.tasks[taskIndex].note = ""
+        snapshot.tasks[taskIndex].done = false
+        
+        dayEntries[dayIndex].snapshot = snapshot
+        weekManager.save(snapshot: snapshot)
+        synchronizeSnapshot(for: date)
+        updateSelectionState()
+        updateSummary()
+    }
+
+    func moveFocusTaskToInbox(on date: Date, taskID: FocusTask.ID, priority: InboxPriority = .medium) {
+        guard let dayIndex = indexOfDay(date),
+              let taskIndex = dayEntries[dayIndex].snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        
+        let task = dayEntries[dayIndex].snapshot.tasks[taskIndex]
+        let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !task.done else { return }
+        
+        // Add to inbox
+        inboxManager.update { state in
+            if state.isCollapsed {
+                state.isCollapsed = false
+            }
+            state.tasks.append(InboxTask(text: trimmed, priority: priority, done: false))
+        }
+        
+        // Clear focus task
+        var snapshot = dayEntries[dayIndex].snapshot
+        snapshot.tasks[taskIndex].text = ""
+        snapshot.tasks[taskIndex].note = ""
+        snapshot.tasks[taskIndex].done = false
+        
+        dayEntries[dayIndex].snapshot = snapshot
+        weekManager.save(snapshot: snapshot)
+        synchronizeSnapshot(for: date)
         updateSelectionState()
         updateSummary()
     }

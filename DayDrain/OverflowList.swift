@@ -23,6 +23,7 @@ struct OverflowList: View {
                     ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
                         OverflowRow(
                             task: task,
+                            isFocusListFull: manager.isFocusListFull,
                             onToggle: { manager.toggleOverflowTaskDone(at: index) },
                             onTextChange: { manager.updateOverflowTaskText(at: index, text: $0) },
                             onPromote: { _ = manager.promoteOverflowTaskToFocus(at: index) },
@@ -100,6 +101,7 @@ struct OverflowList: View {
 
 private struct OverflowRow: View {
     var task: OverflowTask
+    var isFocusListFull: Bool
     var onToggle: () -> Void
     var onTextChange: (String) -> Void
     var onPromote: () -> Void
@@ -108,8 +110,9 @@ private struct OverflowRow: View {
 
     @State private var draftText: String
 
-    init(task: OverflowTask, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onPromote: @escaping () -> Void, onMoveToInbox: @escaping () -> Void, onDelete: @escaping () -> Void) {
+    init(task: OverflowTask, isFocusListFull: Bool, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onPromote: @escaping () -> Void, onMoveToInbox: @escaping () -> Void, onDelete: @escaping () -> Void) {
         self.task = task
+        self.isFocusListFull = isFocusListFull
         self.onToggle = onToggle
         self.onTextChange = onTextChange
         self.onPromote = onPromote
@@ -145,13 +148,15 @@ private struct OverflowRow: View {
 
             Spacer(minLength: 6)
 
-            Button(action: onPromote) {
-                Image(systemName: "arrow.up.circle")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color.accentColor.opacity(0.8))
+            if !isFocusListFull {
+                Button(action: onPromote) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(Color.secondary.opacity(0.75))
+                }
+                .buttonStyle(.plain)
+                .help("Move to Focus")
             }
-            .buttonStyle(.plain)
-            .help("Move to Focus")
 
             Button(action: onMoveToInbox) {
                 Image(systemName: "paperplane")

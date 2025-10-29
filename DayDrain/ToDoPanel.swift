@@ -75,7 +75,9 @@ struct ToDoPanel: View {
                                         onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
                                         onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
                                         onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
-                                        onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) }
+                                        onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) },
+                                        onMoveToOverflow: { manager.moveFocusTaskToOverflow(on: selectedEntry.date, taskID: task.id) },
+                                        onMoveToInbox: { manager.moveFocusTaskToInbox(on: selectedEntry.date, taskID: task.id) }
                                     )
                                     .focused($focusedTaskID, equals: task.id)
                                     .conditionalModifier(canDrag(task: task)) {
@@ -247,16 +249,20 @@ private struct FocusTaskRow: View {
     let onTextChange: (String) -> Void
     let onNoteChange: (String) -> Void
     let onClear: () -> Void
+    let onMoveToOverflow: () -> Void
+    let onMoveToInbox: () -> Void
 
     @State private var isNoteVisible: Bool
 
-    init(task: FocusTask, isHighlighted: Bool, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onNoteChange: @escaping (String) -> Void, onClear: @escaping () -> Void) {
+    init(task: FocusTask, isHighlighted: Bool, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onNoteChange: @escaping (String) -> Void, onClear: @escaping () -> Void, onMoveToOverflow: @escaping () -> Void = {}, onMoveToInbox: @escaping () -> Void = {}) {
         self.task = task
         self.isHighlighted = isHighlighted
         self.onToggle = onToggle
         self.onTextChange = onTextChange
         self.onNoteChange = onNoteChange
         self.onClear = onClear
+        self.onMoveToOverflow = onMoveToOverflow
+        self.onMoveToInbox = onMoveToInbox
         _isNoteVisible = State(initialValue: !task.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
@@ -279,6 +285,25 @@ private struct FocusTaskRow: View {
                         .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundColor(Color.green.opacity(0.75))
                         .transition(.opacity)
+                } else if !task.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    HStack(spacing: 6) {
+                        Button(action: onMoveToOverflow) {
+                            Image(systemName: "tray.fill")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(Color.secondary.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Move to Overflow")
+                        
+                        Button(action: onMoveToInbox) {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(Color.secondary.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Move to Inbox")
+                    }
+                    .transition(.opacity)
                 }
             }
 
