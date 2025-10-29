@@ -44,6 +44,11 @@ final class MenuBarController {
         panelPopover.animates = true
 
         setupBindings()
+        dayManager.onDayComplete = { [weak self] in
+            Task { @MainActor in
+                self?.toDoManager.triggerWindDownPrompt()
+            }
+        }
         registerShortcuts()
         updateStatusBarView()
     }
