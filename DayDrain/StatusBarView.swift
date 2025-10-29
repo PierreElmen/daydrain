@@ -4,6 +4,10 @@ import SwiftUI
 struct StatusBarView: View {
     let progress: Double
     let menuLabel: String
+    let pulseToken: Int
+    let isDimmed: Bool
+
+    @State private var isPulsing: Bool = false
 
     var body: some View {
         HStack(spacing: menuLabel.isEmpty ? 0 : Constants.labelSpacing) {
@@ -14,10 +18,19 @@ struct StatusBarView: View {
                     .foregroundColor(.white)
             }
 
-            MeterBody(progress: progress)
+            MeterBody(progress: progress, isDimmed: isDimmed)
                 .frame(width: Constants.barWidth, height: Constants.barHeight)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Constants.cornerRadius)
+                        .stroke(Color.white.opacity(isPulsing ? 0.9 : 0), lineWidth: 2)
+                        .shadow(color: Color.white.opacity(isPulsing ? 0.65 : 0), radius: isPulsing ? 6 : 0)
+                        .animation(.easeOut(duration: 0.4), value: isPulsing)
+                )
         }
         .animation(.easeInOut(duration: 0.25), value: progress)
+        .onChange(of: pulseToken) { _ in
+            triggerPulse()
+        }
     }
 }
 
@@ -35,6 +48,7 @@ extension StatusBarView {
 
     private struct MeterBody: View {
         let progress: Double
+        let isDimmed: Bool
 
         var body: some View {
             GeometryReader { geometry in
@@ -54,6 +68,7 @@ extension StatusBarView {
                         )
                     }
                     .stroke(Color.white.opacity(Constants.borderOpacity), lineWidth: Constants.borderWidth)
+                    .opacity(isDimmed ? 0.35 : 1)
 
                     Path { path in
                         path.addRoundedRect(
@@ -62,6 +77,7 @@ extension StatusBarView {
                         )
                     }
                     .fill(Color.white.opacity(Constants.emptyFillOpacity))
+                    .opacity(isDimmed ? 0.4 : 1)
 
                     if fillWidth > 0 {
                         let fillRect = CGRect(
@@ -78,9 +94,24 @@ extension StatusBarView {
                                 cornerSize: CGSize(width: fillCornerRadius, height: fillCornerRadius)
                             )
                         }
-                        .fill(Color.white)
+                        .fill(Color.white.opacity(isDimmed ? 0.4 : 1))
                     }
                 }
+            }
+        }
+    }
+}
+
+extension StatusBarView {
+    private func triggerPulse() {
+        guard pulseToken > 0 else { return }
+        withAnimation(.easeOut(duration: 0.28)) {
+            isPulsing = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+            withAnimation(.easeOut(duration: 0.35)) {
+                isPulsing = false
             }
         }
     }
