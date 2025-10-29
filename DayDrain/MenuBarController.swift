@@ -170,6 +170,9 @@ final class MenuBarController {
 
     private func showPanel() {
         guard let button = statusItem.button else { return }
+        if !dayManager.persistOverflowState {
+            toDoManager.resetOverflowToCollapsed()
+        }
         updatePopoverContent()
         panelPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         if let window = panelPopover.contentViewController?.view.window {

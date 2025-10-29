@@ -62,7 +62,7 @@ struct DailyUIState: Codable, Equatable {
     var isOverflowCollapsed: Bool
     var isInboxCollapsed: Bool
 
-    init(isOverflowCollapsed: Bool = false, isInboxCollapsed: Bool = false) {
+    init(isOverflowCollapsed: Bool = true, isInboxCollapsed: Bool = false) {
         self.isOverflowCollapsed = isOverflowCollapsed
         self.isInboxCollapsed = isInboxCollapsed
     }

@@ -51,6 +51,14 @@ private struct GeneralSettingsView: View {
                     .font(.callout)
                     .foregroundColor(.secondary)
             }
+
+            Section(header: Text("Overflow")) {
+                Toggle("Keep overflow open between sessions", isOn: $dayManager.persistOverflowState)
+                
+                Text("Enable this if you use the overflow list frequently. When disabled, overflow is always collapsed when you open the panel.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

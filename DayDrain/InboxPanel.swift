@@ -70,8 +70,7 @@ struct InboxPanel: View {
             )
             .shadow(color: Color.black.opacity(0.28), radius: 20, x: 0, y: 14)
         }
-        .padding(.bottom, 24)
-        .padding(.horizontal, 16)
+        .padding(.bottom, 50)
         .onAppear { focusedIndex = manager.focusedInboxIndex }
         .onReceive(manager.$focusedInboxIndex) { index in
             DispatchQueue.main.async {

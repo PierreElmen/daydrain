@@ -78,7 +78,7 @@ final class ToDoManager: ObservableObject {
         self.allTasksCompleted = false
         self.dayEntries = []
         self.overflowTasks = []
-        self.isOverflowCollapsed = false
+        self.isOverflowCollapsed = true
         self.inboxTasks = []
         self.isInboxCollapsed = false
         self.isWindDownPromptVisible = false
@@ -208,6 +208,19 @@ final class ToDoManager: ObservableObject {
     }
 
     // MARK: - Overflow
+
+    func resetOverflowToCollapsed() {
+        // Update the published state immediately
+        isOverflowCollapsed = true
+        focusedOverflowIndex = nil
+        
+        // Also update the persisted state if the day entry exists
+        if let dayIndex = indexOfDay(selectedDate) {
+            let updatedState = overflowManager.setCollapsed(true, on: selectedDate)
+            dayEntries[dayIndex].snapshot.uiState = updatedState
+            synchronizeSnapshot(for: selectedDate)
+        }
+    }
 
     func toggleOverflowCollapsed() {
         guard let dayIndex = indexOfDay(selectedDate) else { return }
@@ -651,7 +664,7 @@ final class ToDoManager: ObservableObject {
             isOverflowCollapsed = dayEntries[index].snapshot.uiState.isOverflowCollapsed
         } else {
             overflowTasks = []
-            isOverflowCollapsed = false
+            isOverflowCollapsed = true
         }
 
         if let currentIndex = focusedOverflowIndex, !overflowTasks.indices.contains(currentIndex) {
