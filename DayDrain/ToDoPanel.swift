@@ -72,6 +72,7 @@ struct ToDoPanel: View {
                                     FocusTaskRow(
                                         task: task,
                                         isHighlighted: manager.highlightedTaskID == task.id,
+                                        focusedTaskID: $focusedTaskID,
                                         onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
                                         onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
                                         onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
@@ -79,9 +80,9 @@ struct ToDoPanel: View {
                                         onMoveToOverflow: { manager.moveFocusTaskToOverflow(on: selectedEntry.date, taskID: task.id) },
                                         onMoveToInbox: { manager.moveFocusTaskToInbox(on: selectedEntry.date, taskID: task.id) }
                                     )
-                                    .focused($focusedTaskID, equals: task.id)
-                                    .conditionalModifier(canDrag(task: task)) {
-                                        $0.onDrag { NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString) }
+                                    .onDrag {
+                                        guard canDrag(task: task) else { return NSItemProvider() }
+                                        return NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString)
                                     }
                                 }
                             }
@@ -245,6 +246,7 @@ private struct PanelBackground: View {
 private struct FocusTaskRow: View {
     let task: FocusTask
     let isHighlighted: Bool
+    let focusedTaskID: FocusState<FocusTask.ID?>.Binding
     let onToggle: () -> Void
     let onTextChange: (String) -> Void
     let onNoteChange: (String) -> Void
@@ -253,10 +255,13 @@ private struct FocusTaskRow: View {
     let onMoveToInbox: () -> Void
 
     @State private var isNoteVisible: Bool
+    @State private var textValue: String
+    @State private var noteValue: String
 
-    init(task: FocusTask, isHighlighted: Bool, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onNoteChange: @escaping (String) -> Void, onClear: @escaping () -> Void, onMoveToOverflow: @escaping () -> Void = {}, onMoveToInbox: @escaping () -> Void = {}) {
+    init(task: FocusTask, isHighlighted: Bool, focusedTaskID: FocusState<FocusTask.ID?>.Binding, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onNoteChange: @escaping (String) -> Void, onClear: @escaping () -> Void, onMoveToOverflow: @escaping () -> Void = {}, onMoveToInbox: @escaping () -> Void = {}) {
         self.task = task
         self.isHighlighted = isHighlighted
+        self.focusedTaskID = focusedTaskID
         self.onToggle = onToggle
         self.onTextChange = onTextChange
         self.onNoteChange = onNoteChange
@@ -264,6 +269,8 @@ private struct FocusTaskRow: View {
         self.onMoveToOverflow = onMoveToOverflow
         self.onMoveToInbox = onMoveToInbox
         _isNoteVisible = State(initialValue: !task.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        _textValue = State(initialValue: task.text)
+        _noteValue = State(initialValue: task.note)
     }
 
     var body: some View {
@@ -285,7 +292,7 @@ private struct FocusTaskRow: View {
                         .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundColor(Color.green.opacity(0.75))
                         .transition(.opacity)
-                } else if !task.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                } else if !textValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     HStack(spacing: 6) {
                         Button(action: onMoveToOverflow) {
                             Image(systemName: "tray.fill")
@@ -293,6 +300,7 @@ private struct FocusTaskRow: View {
                                 .foregroundColor(Color.secondary.opacity(0.7))
                         }
                         .buttonStyle(.plain)
+                        .focusable(false)
                         .help("Move to Overflow")
                         
                         Button(action: onMoveToInbox) {
@@ -301,6 +309,7 @@ private struct FocusTaskRow: View {
                                 .foregroundColor(Color.secondary.opacity(0.7))
                         }
                         .buttonStyle(.plain)
+                        .focusable(false)
                         .help("Move to Inbox")
                     }
                     .transition(.opacity)
@@ -316,11 +325,9 @@ private struct FocusTaskRow: View {
                     }
                     .buttonStyle(.plain)
 
-                    TextField("Add focus…", text: Binding(
-                        get: { task.text },
-                        set: { onTextChange($0) }
-                    ), axis: .vertical)
+                    TextField("Add focus…", text: $textValue, axis: .vertical)
                         .lineLimit(1...2)
+                        .focused(focusedTaskID, equals: task.id)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, weight: .regular, design: .rounded))
                         .disableAutocorrection(true)
@@ -332,15 +339,17 @@ private struct FocusTaskRow: View {
                             .foregroundColor(noteTint)
                     }
                     .buttonStyle(.plain)
+                    .focusable(false)
                     .accessibilityLabel("Toggle note")
 
-                    if !task.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if !textValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Button(action: onClear) {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundColor(Color.secondary.opacity(0.6))
                         }
                         .buttonStyle(.plain)
+                        .focusable(false)
                         .opacity(0.85)
                     }
                 }
@@ -352,11 +361,9 @@ private struct FocusTaskRow: View {
                 )
 
                 if isNoteVisible {
-                    TextField("Add note…", text: Binding(
-                        get: { task.note },
-                        set: { onNoteChange(String($0.prefix(200))) }
-                    ), axis: .vertical)
+                    TextField("Add note…", text: $noteValue, axis: .vertical)
                         .lineLimit(1...2)
+                        .focused(focusedTaskID, equals: task.id)
                         .textFieldStyle(.plain)
                         .font(.system(size: 11.5, weight: .regular, design: .rounded))
                         .disableAutocorrection(true)
@@ -381,7 +388,41 @@ private struct FocusTaskRow: View {
         )
         .animation(.easeInOut(duration: 0.25), value: task.done)
         .animation(.easeInOut(duration: 0.25), value: isHighlighted)
+        .onChange(of: textValue) { newValue in
+            let limited = String(newValue.prefix(80))
+            guard limited == newValue else {
+                textValue = limited
+                return
+            }
+            if limited != task.text {
+                onTextChange(limited)
+            }
+            if focusedTaskID.wrappedValue != task.id {
+                focusedTaskID.wrappedValue = task.id
+            }
+        }
+        .onChange(of: task.text) { newValue in
+            if newValue != textValue {
+                textValue = newValue
+            }
+        }
+        .onChange(of: noteValue) { newValue in
+            let limited = String(newValue.prefix(200))
+            guard limited == newValue else {
+                noteValue = limited
+                return
+            }
+            if limited != task.note {
+                onNoteChange(limited)
+            }
+            if focusedTaskID.wrappedValue != task.id {
+                focusedTaskID.wrappedValue = task.id
+            }
+        }
         .onChange(of: task.note) { note in
+            if note != noteValue {
+                noteValue = note
+            }
             if !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 isNoteVisible = true
             }
@@ -389,7 +430,7 @@ private struct FocusTaskRow: View {
     }
 
     private var noteTint: Color {
-        if !task.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !noteValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return Color.blue.opacity(0.75)
         }
         return Color.secondary.opacity(0.65)
@@ -485,16 +526,5 @@ private struct VisualEffectBlur: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func conditionalModifier<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
     }
 }
