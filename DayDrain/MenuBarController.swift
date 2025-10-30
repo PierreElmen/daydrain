@@ -108,6 +108,13 @@ final class MenuBarController {
                 self?.updateStatusBarView()
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.hidePanel()
+            }
+            .store(in: &cancellables)
     }
 
     private func updateStatusBarView() {
