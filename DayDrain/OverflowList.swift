@@ -22,6 +22,8 @@ struct OverflowList: View {
                 } else {
                     ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
                         OverflowRow(
+                            index: index,
+                            focusedIndex: $focusedIndex,
                             task: task,
                             isFocusListFull: manager.isFocusListFull,
                             onToggle: { manager.toggleOverflowTaskDone(at: index) },
@@ -31,7 +33,6 @@ struct OverflowList: View {
                             onDelete: { manager.removeOverflowTask(at: index) }
                         )
                         .opacity(task.done ? 0.55 : 1)
-                        .focused($focusedIndex, equals: index)
                     }
                 }
             }
@@ -100,6 +101,8 @@ struct OverflowList: View {
 }
 
 private struct OverflowRow: View {
+    let index: Int
+    let focusedIndex: FocusState<Int?>.Binding
     var task: OverflowTask
     var isFocusListFull: Bool
     var onToggle: () -> Void
@@ -110,7 +113,9 @@ private struct OverflowRow: View {
 
     @State private var draftText: String
 
-    init(task: OverflowTask, isFocusListFull: Bool, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onPromote: @escaping () -> Void, onMoveToInbox: @escaping () -> Void, onDelete: @escaping () -> Void) {
+    init(index: Int, focusedIndex: FocusState<Int?>.Binding, task: OverflowTask, isFocusListFull: Bool, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onPromote: @escaping () -> Void, onMoveToInbox: @escaping () -> Void, onDelete: @escaping () -> Void) {
+        self.index = index
+        self.focusedIndex = focusedIndex
         self.task = task
         self.isFocusListFull = isFocusListFull
         self.onToggle = onToggle
@@ -129,6 +134,7 @@ private struct OverflowRow: View {
                     .foregroundColor(task.done ? Color.green.opacity(0.8) : Color.secondary.opacity(0.75))
             }
             .buttonStyle(.plain)
+            .focusable(false)
 
             TextField("Overflow task…", text: Binding(
                 get: { draftText },
@@ -137,6 +143,7 @@ private struct OverflowRow: View {
                     onTextChange(newValue)
                 }
             ))
+            .focused(focusedIndex, equals: index)
             .textFieldStyle(.plain)
             .font(.system(size: 12.5, weight: .regular, design: .rounded))
             .disableAutocorrection(true)
@@ -156,6 +163,7 @@ private struct OverflowRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Move to Focus")
+                .focusable(false)
             }
 
             Button(action: onMoveToInbox) {
@@ -165,6 +173,7 @@ private struct OverflowRow: View {
             }
             .buttonStyle(.plain)
             .help("Send to Inbox")
+            .focusable(false)
 
             Button(action: onDelete) {
                 Image(systemName: "xmark.circle.fill")
@@ -173,6 +182,7 @@ private struct OverflowRow: View {
             }
             .buttonStyle(.plain)
             .help("Remove overflow task")
+            .focusable(false)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -182,4 +192,3 @@ private struct OverflowRow: View {
         )
     }
 }
-

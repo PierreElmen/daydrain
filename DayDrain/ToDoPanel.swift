@@ -2,13 +2,20 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+private enum PanelFocus: Hashable {
+    case task(FocusTask.ID)
+    case placeholder
+}
+
 struct ToDoPanel: View {
     @ObservedObject var manager: ToDoManager
     var openSettings: () -> Void
     var quitApplication: () -> Void
 
     @State private var isVisible = false
-    @FocusState private var focusedTaskID: FocusTask.ID?
+    @State private var userClearedFocus = false
+    @State private var isSettingFocusProgrammatically = false
+    @FocusState private var panelFocus: PanelFocus?
 
     private let panelWidth: CGFloat = 320
 
@@ -21,6 +28,12 @@ struct ToDoPanel: View {
 
     var body: some View {
         ZStack {
+            FocusPlaceholder()
+                .frame(width: 0, height: 0)
+                .focusable(true)
+                .focused($panelFocus, equals: .placeholder)
+                .allowsHitTesting(false)
+
             VStack(spacing: 0) {
                 // Header with navigation
                 HStack(spacing: 12) {
@@ -48,7 +61,7 @@ struct ToDoPanel: View {
                 .padding(.bottom, 12)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    focusedTaskID = nil
+                    clearFocusDueToUser()
                 }
                 
                 // Subtitle
@@ -57,11 +70,11 @@ struct ToDoPanel: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 18)
-                    .padding(.bottom, 12)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        focusedTaskID = nil
-                    }
+                .padding(.bottom, 12)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    clearFocusDueToUser()
+                }
                 
                 // Main focus content (no scroll)
                 VStack(alignment: .leading, spacing: 0) {
@@ -72,7 +85,7 @@ struct ToDoPanel: View {
                                     FocusTaskRow(
                                         task: task,
                                         isHighlighted: manager.highlightedTaskID == task.id,
-                                        focusedTaskID: $focusedTaskID,
+                                        focusBinding: $panelFocus,
                                         onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
                                         onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
                                         onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
@@ -98,7 +111,7 @@ struct ToDoPanel: View {
                     Spacer(minLength: 16)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            focusedTaskID = nil
+                            clearFocusDueToUser()
                         }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -168,10 +181,37 @@ struct ToDoPanel: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: manager.isWindDownPromptVisible)
         .onAppear {
             isVisible = true
-            focusedTaskID = manager.focusedTaskID
+            userClearedFocus = false
+            focusFirstEmptyTaskIfAvailable()
         }
-        .onChange(of: focusedTaskID) { manager.focusedTaskID = $0 }
-        .onReceive(manager.$focusedTaskID) { focusedTaskID = $0 }
+        .onDisappear {
+            manager.focusedTaskID = nil
+            setPanelFocus(.placeholder)
+        }
+        .onChange(of: panelFocus) { newValue in
+            let taskID = newValue?.taskID
+            if manager.focusedTaskID != taskID {
+                manager.focusedTaskID = taskID
+            }
+            if !isSettingFocusProgrammatically {
+                userClearedFocus = (newValue == nil || newValue == .placeholder)
+            }
+        }
+        .onReceive(manager.$focusedTaskID) { newValue in
+            guard !isSettingFocusProgrammatically else { return }
+            if let id = newValue {
+                if panelFocus != .some(.task(id)) {
+                    setPanelFocus(.task(id))
+                }
+                userClearedFocus = false
+            } else if panelFocus != .some(.placeholder) {
+                setPanelFocus(.placeholder)
+            }
+        }
+        .onChange(of: manager.selectedDate) { _ in
+            userClearedFocus = false
+            focusFirstEmptyTaskIfAvailable()
+        }
     }
     
     private func canDrag(task: FocusTask) -> Bool {
@@ -189,6 +229,46 @@ private extension ToDoPanel {
     var isAtLastDay: Bool {
         guard let last = manager.weekDates.last else { return true }
         return Calendar.current.isDate(manager.selectedDate, inSameDayAs: last)
+    }
+
+    var firstEmptyFocusTaskID: FocusTask.ID? {
+        manager.tasks(for: manager.selectedDate)
+            .first(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
+            .id
+    }
+
+    func focusFirstEmptyTaskIfAvailable() {
+        guard !userClearedFocus else { return }
+        if let emptyID = firstEmptyFocusTaskID {
+            setPanelFocus(.task(emptyID))
+        } else {
+            setPanelFocus(.placeholder)
+        }
+    }
+
+    func clearFocusDueToUser() {
+        userClearedFocus = true
+        setPanelFocus(.placeholder)
+    }
+
+    func setPanelFocus(_ newFocus: PanelFocus?) {
+        guard panelFocus != newFocus else { return }
+        isSettingFocusProgrammatically = true
+        panelFocus = newFocus
+        DispatchQueue.main.async {
+            isSettingFocusProgrammatically = false
+        }
+    }
+}
+
+private extension PanelFocus {
+    var taskID: FocusTask.ID? {
+        switch self {
+        case .task(let id):
+            return id
+        case .placeholder:
+            return nil
+        }
     }
 }
 
@@ -243,10 +323,20 @@ private struct PanelBackground: View {
     }
 }
 
+private struct FocusPlaceholder: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.focusRingType = .none
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 private struct FocusTaskRow: View {
     let task: FocusTask
     let isHighlighted: Bool
-    let focusedTaskID: FocusState<FocusTask.ID?>.Binding
+    let focusBinding: FocusState<PanelFocus?>.Binding
     let onToggle: () -> Void
     let onTextChange: (String) -> Void
     let onNoteChange: (String) -> Void
@@ -258,10 +348,10 @@ private struct FocusTaskRow: View {
     @State private var textValue: String
     @State private var noteValue: String
 
-    init(task: FocusTask, isHighlighted: Bool, focusedTaskID: FocusState<FocusTask.ID?>.Binding, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onNoteChange: @escaping (String) -> Void, onClear: @escaping () -> Void, onMoveToOverflow: @escaping () -> Void = {}, onMoveToInbox: @escaping () -> Void = {}) {
+    init(task: FocusTask, isHighlighted: Bool, focusBinding: FocusState<PanelFocus?>.Binding, onToggle: @escaping () -> Void, onTextChange: @escaping (String) -> Void, onNoteChange: @escaping (String) -> Void, onClear: @escaping () -> Void, onMoveToOverflow: @escaping () -> Void = {}, onMoveToInbox: @escaping () -> Void = {}) {
         self.task = task
         self.isHighlighted = isHighlighted
-        self.focusedTaskID = focusedTaskID
+        self.focusBinding = focusBinding
         self.onToggle = onToggle
         self.onTextChange = onTextChange
         self.onNoteChange = onNoteChange
@@ -327,7 +417,7 @@ private struct FocusTaskRow: View {
 
                     TextField("Add focus…", text: $textValue, axis: .vertical)
                         .lineLimit(1...2)
-                        .focused(focusedTaskID, equals: task.id)
+                        .focused(focusBinding, equals: .task(task.id))
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, weight: .regular, design: .rounded))
                         .disableAutocorrection(true)
@@ -363,7 +453,7 @@ private struct FocusTaskRow: View {
                 if isNoteVisible {
                     TextField("Add note…", text: $noteValue, axis: .vertical)
                         .lineLimit(1...2)
-                        .focused(focusedTaskID, equals: task.id)
+                        .focused(focusBinding, equals: .task(task.id))
                         .textFieldStyle(.plain)
                         .font(.system(size: 11.5, weight: .regular, design: .rounded))
                         .disableAutocorrection(true)
@@ -397,8 +487,8 @@ private struct FocusTaskRow: View {
             if limited != task.text {
                 onTextChange(limited)
             }
-            if focusedTaskID.wrappedValue != task.id {
-                focusedTaskID.wrappedValue = task.id
+            if focusBinding.wrappedValue != .some(.task(task.id)) {
+                focusBinding.wrappedValue = .task(task.id)
             }
         }
         .onChange(of: task.text) { newValue in
@@ -415,8 +505,8 @@ private struct FocusTaskRow: View {
             if limited != task.note {
                 onNoteChange(limited)
             }
-            if focusedTaskID.wrappedValue != task.id {
-                focusedTaskID.wrappedValue = task.id
+            if focusBinding.wrappedValue != .some(.task(task.id)) {
+                focusBinding.wrappedValue = .task(task.id)
             }
         }
         .onChange(of: task.note) { note in
@@ -426,6 +516,23 @@ private struct FocusTaskRow: View {
             if !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 isNoteVisible = true
             }
+        }
+        .onChange(of: focusBinding.wrappedValue) { newValue in
+            guard newValue == .some(.task(task.id)) else { return }
+            moveCursorToEnd()
+        }
+        .onAppear {
+            if focusBinding.wrappedValue == .some(.task(task.id)) {
+                moveCursorToEnd()
+            }
+        }
+    }
+
+    private func moveCursorToEnd() {
+        DispatchQueue.main.async {
+            guard let textView = NSApp?.keyWindow?.firstResponder as? NSTextView else { return }
+            let length = textView.string.count
+            textView.setSelectedRange(NSRange(location: length, length: 0))
         }
     }
 
