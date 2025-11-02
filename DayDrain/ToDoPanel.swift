@@ -161,6 +161,16 @@ struct ToDoPanel: View {
             .offset(y: isVisible ? 0 : -12)
 
             if manager.isInboxPanelVisible {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            manager.hideInboxPanel()
+                        }
+                    }
+                    .transition(.opacity)
+                    .zIndex(0.5)
+
                 InboxPanel(manager: manager, onClose: {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         manager.hideInboxPanel()
