@@ -10,6 +10,7 @@ private enum PanelFocus: Hashable {
 struct ToDoPanel: View {
     @ObservedObject var manager: ToDoManager
     var openSettings: () -> Void
+    var openNotesWindow: () -> Void
     var quitApplication: () -> Void
 
     @State private var isVisible = false
@@ -137,6 +138,16 @@ struct ToDoPanel: View {
                     .buttonStyle(CompactButtonStyle())
                     .help("Toggle Inbox")
 
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            manager.toggleNotesPanelVisibility()
+                        }
+                    }) {
+                        Image(systemName: manager.isNotesPanelVisible ? "square.and.pencil.circle.fill" : "square.and.pencil")
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                    .help("Toggle Notes")
+
                     Button(action: openSettings) {
                         Image(systemName: "gear")
                     }
@@ -179,6 +190,24 @@ struct ToDoPanel: View {
                 .zIndex(1)
             }
 
+            if manager.isNotesPanelVisible {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            manager.hideNotesPanel()
+                        }
+                    }
+                    .transition(.opacity)
+                    .zIndex(0.55)
+
+                NotesPanel(manager: manager, openFloatingWindow: {
+                    openNotesWindow()
+                    manager.hideNotesPanel()
+                })
+                .zIndex(1.1)
+            }
+
             if manager.isWindDownPromptVisible {
                 WindDownPrompt(
                     onSelectMood: { manager.logMood($0) },
@@ -197,6 +226,7 @@ struct ToDoPanel: View {
         .onDisappear {
             manager.focusedTaskID = nil
             setPanelFocus(.placeholder)
+            manager.hideNotesPanel()
         }
         .onChange(of: panelFocus) { newValue in
             let taskID = newValue?.taskID

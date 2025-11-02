@@ -20,6 +20,10 @@
                 AA2020202020202020202020 /* InboxManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2020202020202020202020 /* InboxManager.swift */; };
                 AA3030303030303030303030 /* OverflowList.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3030303030303030303030 /* OverflowList.swift */; };
                 AA4040404040404040404040 /* InboxPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4040404040404040404040 /* InboxPanel.swift */; };
+                AAF1F1F1F1F1F1F1F1F1F1F1 /* NotesManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE1E1E1E1E1E1E1E1E1E1E1 /* NotesManager.swift */; };
+                AAB2B2B2B2B2B2B2B2B2B2B2 /* NotesPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBC2C2C2C2C2C2C2C2C2C2C2 /* NotesPanel.swift */; };
+                AAC3C3C3C3C3C3C3C3C3C3C3 /* FloatingNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBD3D3D3D3D3D3D3D3D3D3D3 /* FloatingNoteView.swift */; };
+                AAD4D4D4D4D4D4D4D4D4D4D4 /* FloatingNoteWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE4E4E4E4E4E4E4E4E4E4E4 /* FloatingNoteWindow.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,8 +40,12 @@
                 BB2020202020202020202020 /* InboxManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxManager.swift; sourceTree = "<group>"; };
                 BB3030303030303030303030 /* OverflowList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverflowList.swift; sourceTree = "<group>"; };
                 BB4040404040404040404040 /* InboxPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxPanel.swift; sourceTree = "<group>"; };
-		CC1111111111111111111111 /* DayDrain.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DayDrain.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		DD1111111111111111111111 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+                BBE1E1E1E1E1E1E1E1E1E1E1 /* NotesManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesManager.swift; sourceTree = "<group>"; };
+                BBC2C2C2C2C2C2C2C2C2C2C2 /* NotesPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesPanel.swift; sourceTree = "<group>"; };
+                BBD3D3D3D3D3D3D3D3D3D3D3 /* FloatingNoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingNoteView.swift; sourceTree = "<group>"; };
+                BBE4E4E4E4E4E4E4E4E4E4E4 /* FloatingNoteWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingNoteWindow.swift; sourceTree = "<group>"; };
+                CC1111111111111111111111 /* DayDrain.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DayDrain.app; sourceTree = BUILT_PRODUCTS_DIR; };
+                DD1111111111111111111111 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +79,10 @@
                                 BB7777777777777777777777 /* ToDoPanel.swift */,
                                 BB3030303030303030303030 /* OverflowList.swift */,
                                 BB4040404040404040404040 /* InboxPanel.swift */,
+                                BBC2C2C2C2C2C2C2C2C2C2C2 /* NotesPanel.swift */,
+                                BBD3D3D3D3D3D3D3D3D3D3D3 /* FloatingNoteView.swift */,
+                                BBE4E4E4E4E4E4E4E4E4E4E4 /* FloatingNoteWindow.swift */,
+                                BBE1E1E1E1E1E1E1E1E1E1E1 /* NotesManager.swift */,
                                 BB8888888888888888888888 /* WeekManager.swift */,
                                 BB9999999999999999999999 /* FocusModels.swift */,
                                 BB1010101010101010101010 /* OverflowManager.swift */,
@@ -163,6 +175,10 @@
                                 AA5555555555555555555555 /* MenuBarController.swift in Sources */,
                                 AA6666666666666666666666 /* ToDoManager.swift in Sources */,
                                 AA7777777777777777777777 /* ToDoPanel.swift in Sources */,
+                                AAF1F1F1F1F1F1F1F1F1F1F1 /* NotesManager.swift in Sources */,
+                                AAB2B2B2B2B2B2B2B2B2B2B2 /* NotesPanel.swift in Sources */,
+                                AAC3C3C3C3C3C3C3C3C3C3C3 /* FloatingNoteView.swift in Sources */,
+                                AAD4D4D4D4D4D4D4D4D4D4D4 /* FloatingNoteWindow.swift in Sources */,
                                 AA8888888888888888888888 /* WeekManager.swift in Sources */,
                                 AA9999999999999999999999 /* FocusModels.swift in Sources */,
                                 AA1010101010101010101010 /* OverflowManager.swift in Sources */,

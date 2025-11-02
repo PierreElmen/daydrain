@@ -11,6 +11,7 @@ final class MenuBarController {
     private let dayManager: DayManager
     private let toDoManager: ToDoManager
     private var settingsWindowController: NSWindowController?
+    private let floatingNoteWindow: FloatingNoteWindow
     private var latestProgress: Double = 0
     private var latestMenuValue: String = ""
     private let statusItemHorizontalPadding: CGFloat = 8
@@ -27,6 +28,7 @@ final class MenuBarController {
         self.dayManager = dayManager
         self.toDoManager = toDoManager
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        self.floatingNoteWindow = FloatingNoteWindow(toDoManager: toDoManager)
         statusItem.isVisible = true
         statusItem.button?.toolTip = "DayDrain"
         statusItem.button?.target = self
@@ -197,6 +199,10 @@ final class MenuBarController {
             openSettings: { [weak self] in
                 self?.hidePanel()
                 self?.openSettings()
+            },
+            openNotesWindow: { [weak self] in
+                self?.floatingNoteWindow.show()
+                self?.hidePanel()
             },
             quitApplication: { [weak self] in
                 self?.hidePanel()
