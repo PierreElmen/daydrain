@@ -56,6 +56,7 @@ final class ToDoManager: ObservableObject {
     private var midnightTimer: Timer?
     private var currentDay: Date
     private var calendar = Calendar.current
+    private let focusCarryoverLookbackDays = 7
 
     private lazy var isoFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -92,6 +93,7 @@ final class ToDoManager: ObservableObject {
         self.focusedOverflowIndex = nil
         self.focusedInboxIndex = nil
 
+        carryForwardIncompleteFocusTasks(upTo: currentDay)
         ensureCurrentWeekLoaded()
         scheduleMidnightRefresh()
     }
@@ -681,6 +683,7 @@ final class ToDoManager: ObservableObject {
         if today != currentDay {
             let previousDay = currentDay
             currentDay = today
+            carryForwardIncompleteFocusTasks(upTo: today)
             moveIncompleteOverflowToInbox(from: previousDay)
             ensureCurrentWeekLoaded()
         } else {
@@ -690,12 +693,84 @@ final class ToDoManager: ObservableObject {
 
     // MARK: - Private
 
+    private func carryForwardIncompleteFocusTasks(upTo targetDate: Date) {
+        let upperBound = Self.startOfDay(for: targetDate)
+        guard let start = calendar.date(byAdding: .day, value: -focusCarryoverLookbackDays, to: upperBound) else { return }
+        var current = Self.startOfDay(for: start)
+
+        while current < upperBound {
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            carryOverIncompleteFocusTasks(from: current, to: next)
+            current = next
+        }
+    }
+
+    @discardableResult
+    private func carryOverIncompleteFocusTasks(from date: Date, to nextDate: Date) -> Bool {
+        var sourceSnapshot = weekManager.snapshot(for: date)
+        var carried: [(text: String, note: String, normalized: String, trimmedNote: String)] = []
+
+        for index in sourceSnapshot.tasks.indices {
+            let task = sourceSnapshot.tasks[index]
+            let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !task.done else { continue }
+            let sanitizedText = String(trimmed.prefix(80))
+            let sanitizedNote = String(task.note.prefix(200))
+            let normalizedText = sanitizedText.lowercased()
+            let trimmedNote = sanitizedNote.trimmingCharacters(in: .whitespacesAndNewlines)
+            carried.append((text: sanitizedText, note: sanitizedNote, normalized: normalizedText, trimmedNote: trimmedNote))
+            sourceSnapshot.tasks[index].text = ""
+            sourceSnapshot.tasks[index].note = ""
+            sourceSnapshot.tasks[index].done = false
+        }
+
+        guard !carried.isEmpty else { return false }
+
+        var destinationSnapshot = weekManager.snapshot(for: nextDate)
+        var overflowed: [(text: String, note: String, normalized: String, trimmedNote: String)] = []
+
+        for carriedTask in carried {
+            if let slotIndex = destinationSnapshot.tasks.firstIndex(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                destinationSnapshot.tasks[slotIndex].text = carriedTask.text
+                destinationSnapshot.tasks[slotIndex].note = carriedTask.note
+                destinationSnapshot.tasks[slotIndex].done = false
+            } else if let existingIndex = destinationSnapshot.tasks.firstIndex(where: {
+                $0.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == carriedTask.normalized
+            }) {
+                if destinationSnapshot.tasks[existingIndex].note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   !carriedTask.trimmedNote.isEmpty {
+                    destinationSnapshot.tasks[existingIndex].note = carriedTask.note
+                }
+                destinationSnapshot.tasks[existingIndex].done = false
+            } else {
+                overflowed.append(carriedTask)
+            }
+        }
+
+        weekManager.save(snapshot: sourceSnapshot)
+        weekManager.save(snapshot: destinationSnapshot)
+
+        if !overflowed.isEmpty {
+            inboxManager.update { state in
+                if state.isCollapsed {
+                    state.isCollapsed = false
+                }
+                for item in overflowed {
+                    let inboxText = String(item.text.prefix(160))
+                    state.tasks.append(InboxTask(text: inboxText, priority: .medium, done: false))
+                }
+            }
+        }
+
+        return true
+    }
+
     private func moveIncompleteOverflowToInbox(from date: Date) {
         let overflowTasks = overflowManager.tasks(for: date)
         let incompleteTasks = overflowTasks.filter { task in
             !task.done && !task.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        
+
         guard !incompleteTasks.isEmpty else { return }
         
         // Remove all incomplete overflow tasks from the previous day
@@ -707,6 +782,9 @@ final class ToDoManager: ObservableObject {
         
         // Add them to the inbox
         inboxManager.update { state in
+            if state.isCollapsed {
+                state.isCollapsed = false
+            }
             for task in incompleteTasks {
                 state.tasks.append(InboxTask(text: task.text, priority: .medium, done: false))
             }
