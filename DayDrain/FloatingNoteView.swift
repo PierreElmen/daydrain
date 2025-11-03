@@ -12,15 +12,17 @@ final class FloatingNoteViewModel: ObservableObject {
 struct FloatingNoteView: View {
     @ObservedObject var manager: ToDoManager
     @ObservedObject var viewModel: FloatingNoteViewModel
+    var onClose: () -> Void
 
     @State private var draft: String
     @State private var isEditorFocused: Bool
     @State private var isHovering: Bool = false
     @State private var isHeaderHovering: Bool = false
 
-    init(manager: ToDoManager, viewModel: FloatingNoteViewModel) {
+    init(manager: ToDoManager, viewModel: FloatingNoteViewModel, onClose: @escaping () -> Void) {
         self.manager = manager
         self.viewModel = viewModel
+        self.onClose = onClose
         _draft = State(initialValue: manager.currentNote.content)
         _isEditorFocused = State(initialValue: true)
     }
@@ -42,6 +44,18 @@ struct FloatingNoteView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            VisualEffectBlurView(material: .hudWindow, blendingMode: .withinWindow)
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.12),
+                            Color.white.opacity(0.04)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
             VStack(alignment: .leading, spacing: 12) {
                 DailyNoteEditor(
                     manager: manager,
@@ -52,10 +66,9 @@ struct FloatingNoteView: View {
                     onCopyShortcut: manager.copyNoteToClipboard
                 )
                 .frame(minHeight: 280)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 if shouldShowHelp {
-                    Text("Shortcuts: ⌘B bold, ⌘I italic, ⌘⇧C copy. Markdown markers keep things lightweight.")
+                    Text("Shortcuts: ⌘B bold, ⌘I italic, ⌘⇧X strike, ⌘⇧8 bullet, ⌘⇧C copy. Markdown markers keep things lightweight: **bold**, *italic*, ~~strike~~, * bullets.")
                         .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundColor(.secondary)
                         .transition(.opacity)
@@ -70,13 +83,10 @@ struct FloatingNoteView: View {
                 .padding(.top, 12)
                 .opacity(headerOpacity)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(NSColor.windowBackgroundColor))
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                .stroke(Color.white.opacity(0.05), lineWidth: 1)
         )
         .onAppear {
             draft = manager.currentNote.content
@@ -95,49 +105,63 @@ struct FloatingNoteView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Button(action: manager.jumpToPreviousDay) {
-                Image(systemName: "chevron.left")
+        HStack(spacing: 10) {
+            headerButton(icon: "xmark", tint: Color.primary.opacity(0.75), backgroundOpacity: 0.16) {
+                onClose()
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .semibold))
-            .frame(width: 24, height: 24)
-            .background(Capsule().fill(Color.primary.opacity(0.08)))
+            .accessibilityLabel("Close notes window")
+
+            headerButton(icon: "chevron.left") {
+                manager.jumpToPreviousDay()
+            }
+            .accessibilityLabel("Previous day")
 
             Text(headerTitle)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.primary.opacity(0.85))
+                .foregroundColor(.primary.opacity(0.88))
                 .frame(maxWidth: .infinity)
 
-            Button(action: manager.jumpToNextDay) {
-                Image(systemName: "chevron.right")
+            headerButton(icon: "chevron.right") {
+                manager.jumpToNextDay()
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .semibold))
-            .frame(width: 24, height: 24)
-            .background(Capsule().fill(Color.primary.opacity(0.08)))
+            .accessibilityLabel("Next day")
 
-            Button(action: togglePin) {
-                Text(viewModel.isPinned ? "📌" : "📍")
-                    .font(.system(size: 14))
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Color.primary.opacity(0.08)))
+            headerButton(
+                icon: viewModel.isPinned ? "pin.fill" : "pin",
+                tint: viewModel.isPinned ? Color.accentColor : Color.primary.opacity(0.85),
+                backgroundOpacity: viewModel.isPinned ? 0.18 : 0.12
+            ) {
+                togglePin()
             }
-            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.isPinned ? "Unpin window" : "Pin window")
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(NSColor.windowBackgroundColor).opacity(0.88))
-                .blur(radius: 0.6)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.16))
         )
-        .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 10)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: Color.black.opacity(0.16), radius: 18, x: 0, y: 12)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHeaderHovering = hovering
             }
         }
+    }
+
+    private func headerButton(icon: String, tint: Color = Color.primary.opacity(0.85), backgroundOpacity: Double = 0.12, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(backgroundOpacity))
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private func togglePin() {
@@ -151,4 +175,22 @@ struct FloatingNoteView: View {
         formatter.locale = Locale.autoupdatingCurrent
         return formatter
     }()
+}
+
+private struct VisualEffectBlurView: NSViewRepresentable {
+    var material: NSVisualEffectView.Material
+    var blendingMode: NSVisualEffectView.BlendingMode
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.state = .active
+        view.material = material
+        view.blendingMode = blendingMode
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
+    }
 }

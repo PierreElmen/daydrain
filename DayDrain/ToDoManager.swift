@@ -29,6 +29,9 @@ final class ToDoManager: ObservableObject {
     @Published var focusedInboxIndex: Int?
     @Published var isInboxPanelVisible: Bool
     @Published var isNotesPanelVisible: Bool
+    @Published var keepInboxPanelOpenBetweenSessions: Bool
+    @Published var keepNotesPanelOpenBetweenSessions: Bool
+    @Published var openNotesInFloatingByDefault: Bool
     @Published var isWindDownPromptVisible: Bool
 
     var onTaskDone: ((FocusTask, Date) -> Void)?
@@ -63,6 +66,12 @@ final class ToDoManager: ObservableObject {
     private var calendar = Calendar.current
     private let focusCarryoverLookbackDays = 7
     private var noteCancellable: AnyCancellable?
+    private let defaults = UserDefaults.standard
+    private let keepInboxPanelOpenKey = "ToDoManagerKeepInboxPanelOpen"
+    private let keepNotesPanelOpenKey = "ToDoManagerKeepNotesPanelOpen"
+    private let legacyCloseNotesWithPanelKey = "ToDoManagerCloseNotesWithPanel"
+    private let openNotesFloatingKey = "ToDoManagerOpenNotesFloating"
+    private var cancellables: Set<AnyCancellable> = []
 
     private lazy var isoFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -84,6 +93,16 @@ final class ToDoManager: ObservableObject {
         self.overflowManager = OverflowManager(weekManager: weekManager)
         self.inboxManager = InboxManager()
         self.notesManager = NotesManager()
+        let storedKeepInbox = defaults.object(forKey: keepInboxPanelOpenKey) as? Bool ?? false
+        let storedKeepNotes: Bool
+        if let value = defaults.object(forKey: keepNotesPanelOpenKey) as? Bool {
+            storedKeepNotes = value
+        } else if let legacy = defaults.object(forKey: legacyCloseNotesWithPanelKey) as? Bool {
+            storedKeepNotes = !legacy
+        } else {
+            storedKeepNotes = false
+        }
+        let storedOpenFloating = defaults.object(forKey: openNotesFloatingKey) as? Bool ?? false
         self.currentDay = Self.startOfDay(for: Date())
         self.selectedDate = currentDay
         self.weekSummary = .empty
@@ -102,11 +121,15 @@ final class ToDoManager: ObservableObject {
         self.focusedInboxIndex = nil
         self.selectedNoteDate = currentDay
         self.currentNote = notesManager.currentNote(for: currentDay)
+        self.keepInboxPanelOpenBetweenSessions = storedKeepInbox
+        self.keepNotesPanelOpenBetweenSessions = storedKeepNotes
+        self.openNotesInFloatingByDefault = storedOpenFloating
 
         carryForwardIncompleteFocusTasks(upTo: currentDay)
         ensureCurrentWeekLoaded()
         scheduleMidnightRefresh()
         observeNote(for: currentDay)
+        bindPreferences()
     }
 
     deinit {
@@ -434,6 +457,11 @@ final class ToDoManager: ObservableObject {
 
     func toggleNotesPanelVisibility() {
         isNotesPanelVisible.toggle()
+        if isNotesPanelVisible {
+            focusedTaskID = nil
+            focusedOverflowIndex = nil
+            focusedInboxIndex = nil
+        }
     }
 
     func hideNotesPanel() {
@@ -741,6 +769,32 @@ final class ToDoManager: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func bindPreferences() {
+        $keepInboxPanelOpenBetweenSessions
+            .dropFirst()
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.defaults.set(value, forKey: self.keepInboxPanelOpenKey)
+            }
+            .store(in: &cancellables)
+
+        $keepNotesPanelOpenBetweenSessions
+            .dropFirst()
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.defaults.set(value, forKey: self.keepNotesPanelOpenKey)
+            }
+            .store(in: &cancellables)
+
+        $openNotesInFloatingByDefault
+            .dropFirst()
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.defaults.set(value, forKey: self.openNotesFloatingKey)
+            }
+            .store(in: &cancellables)
+    }
 
     private func carryForwardIncompleteFocusTasks(upTo targetDate: Date) {
         let upperBound = Self.startOfDay(for: targetDate)

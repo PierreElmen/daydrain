@@ -9,6 +9,7 @@ final class FloatingNoteWindow: NSObject, NSWindowDelegate {
     private var cancellables: Set<AnyCancellable> = []
     private let viewModel: FloatingNoteViewModel
     private let pinDefaultsKey = "FloatingNoteWindowPinned"
+    private let baseCollectionBehavior: NSWindow.CollectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
 
     init(toDoManager: ToDoManager) {
         self.toDoManager = toDoManager
@@ -50,17 +51,33 @@ final class FloatingNoteWindow: NSObject, NSWindowDelegate {
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
-        panel.backgroundColor = NSColor.windowBackgroundColor
-        panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
+        panel.styleMask.remove(.miniaturizable)
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.backgroundColor = .clear
+        panel.collectionBehavior = baseCollectionBehavior
+        panel.isFloatingPanel = true
         panel.isReleasedWhenClosed = false
         panel.delegate = self
         panel.setFrameAutosaveName("DayDrainFloatingNoteWindow")
         panel.contentMinSize = NSSize(width: 360, height: 360)
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
 
-        let hosting = NSHostingController(rootView: FloatingNoteView(manager: toDoManager, viewModel: viewModel))
+        let hosting = NSHostingController(
+            rootView: FloatingNoteView(
+                manager: toDoManager,
+                viewModel: viewModel,
+                onClose: { [weak panel] in
+                    panel?.performClose(nil)
+                }
+            )
+        )
         hosting.view.wantsLayer = true
         hosting.view.layer?.cornerRadius = 18
         hosting.view.layer?.masksToBounds = true
+        hosting.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         panel.contentViewController = hosting
         updateWindowLevel(viewModel.isPinned, on: panel)
@@ -70,7 +87,13 @@ final class FloatingNoteWindow: NSObject, NSWindowDelegate {
     }
 
     private func updateRootView() {
-        hostingController?.rootView = FloatingNoteView(manager: toDoManager, viewModel: viewModel)
+        hostingController?.rootView = FloatingNoteView(
+            manager: toDoManager,
+            viewModel: viewModel,
+            onClose: { [weak self] in
+                self?.panel?.performClose(nil)
+            }
+        )
     }
 
     private func storePinnedState(_ pinned: Bool) {
@@ -78,8 +101,14 @@ final class FloatingNoteWindow: NSObject, NSWindowDelegate {
     }
 
     private func updateWindowLevel(_ pinned: Bool, on panel: NSPanel? = nil) {
-        let target = panel ?? self.panel
-        target?.level = pinned ? .floating : .normal
+        guard let target = panel ?? self.panel else { return }
+        target.level = pinned ? .floating : .normal
+        target.hidesOnDeactivate = !pinned
+        target.collectionBehavior = pinned ? baseCollectionBehavior.union([.ignoresCycle]) : baseCollectionBehavior
+
+        if pinned {
+            target.orderFrontRegardless()
+        }
     }
 
 }

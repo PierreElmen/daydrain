@@ -2,10 +2,11 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var dayManager: DayManager
+    @ObservedObject var toDoManager: ToDoManager
 
     var body: some View {
         TabView {
-            GeneralSettingsView(dayManager: dayManager)
+            GeneralSettingsView(dayManager: dayManager, toDoManager: toDoManager)
                 .tabItem {
                     Label("General", systemImage: "gear")
                 }
@@ -22,6 +23,7 @@ struct SettingsView: View {
 
 private struct GeneralSettingsView: View {
     @ObservedObject var dayManager: DayManager
+    @ObservedObject var toDoManager: ToDoManager
 
     var body: some View {
         Form {
@@ -56,6 +58,24 @@ private struct GeneralSettingsView: View {
                 Toggle("Keep overflow open between sessions", isOn: $dayManager.persistOverflowState)
                 
                 Text("Enable this if you use the overflow list frequently. When disabled, overflow is always collapsed when you open the panel.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+
+            Section(header: Text("Inbox")) {
+                Toggle("Keep inbox open between sessions", isOn: $toDoManager.keepInboxPanelOpenBetweenSessions)
+
+                Text("When disabled, the inbox drawer stays hidden until you open it each time.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+
+            Section(header: Text("Notes")) {
+                Toggle("Keep inline notes open between sessions", isOn: $toDoManager.keepNotesPanelOpenBetweenSessions)
+
+                Toggle("Open notes in floating window by default", isOn: $toDoManager.openNotesInFloatingByDefault)
+
+                Text("When enabled, inline notes stay open the next time you open the panel. You can also jump straight to the detached notes window each time.")
                     .font(.callout)
                     .foregroundColor(.secondary)
             }
@@ -140,7 +160,7 @@ private struct WeekdayGrid: View {
 
 struct SettingsView_Previews: PreviewProvider {
     static var previews: some View {
-        SettingsView(dayManager: DayManager())
+        SettingsView(dayManager: DayManager(), toDoManager: ToDoManager())
             .frame(width: 360)
     }
 }

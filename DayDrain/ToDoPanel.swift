@@ -36,86 +36,89 @@ struct ToDoPanel: View {
                 .allowsHitTesting(false)
 
             VStack(spacing: 0) {
-                // Header with navigation
-                HStack(spacing: 12) {
-                    Button(action: manager.goToPreviousDay) {
-                        Image(systemName: "chevron.left")
-                    }
-                    .buttonStyle(NavButtonStyle())
-                    .disabled(isAtFirstDay)
-                    .help("Previous day")
-                    
-                    Text(manager.descriptor(for: manager.selectedDate))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundColor(.primary.opacity(0.85))
-                        .frame(maxWidth: .infinity)
-                    
-                    Button(action: manager.goToNextDay) {
-                        Image(systemName: "chevron.right")
-                    }
-                    .buttonStyle(NavButtonStyle())
-                    .disabled(isAtLastDay)
-                    .help("Next day")
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 16)
-                .padding(.bottom, 12)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    clearFocusDueToUser()
-                }
-                
-                // Subtitle
-                Text("Focus on the most important tasks")
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 18)
-                .padding(.bottom, 12)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    clearFocusDueToUser()
-                }
-                
-                // Main focus content (no scroll)
-                VStack(alignment: .leading, spacing: 0) {
-                    if let selectedEntry = manager.dayEntries.first(where: { Calendar.current.isDate($0.date, inSameDayAs: manager.selectedDate) }) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            VStack(alignment: .leading, spacing: 10) {
-                                ForEach(selectedEntry.snapshot.tasks) { task in
-                                    FocusTaskRow(
-                                        task: task,
-                                        isHighlighted: manager.highlightedTaskID == task.id,
-                                        focusBinding: $panelFocus,
-                                        onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
-                                        onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
-                                        onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
-                                        onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) },
-                                        onMoveToOverflow: { manager.moveFocusTaskToOverflow(on: selectedEntry.date, taskID: task.id) },
-                                        onMoveToInbox: { manager.moveFocusTaskToInbox(on: selectedEntry.date, taskID: task.id) }
-                                    )
-                                    .onDrag {
-                                        guard canDrag(task: task) else { return NSItemProvider() }
-                                        return NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString)
-                                    }
-                                }
-                            }
-
-                            OverflowList(manager: manager)
-                                .padding(.horizontal, 2)
+                VStack(spacing: 0) {
+                    // Header with navigation
+                    HStack(spacing: 12) {
+                        Button(action: manager.goToPreviousDay) {
+                            Image(systemName: "chevron.left")
                         }
-                        .padding(.horizontal, 18)
-                        .id(selectedEntry.date)
-                        .onDrop(of: [UTType.utf8PlainText], delegate: DropDelegate(onDrop: { manager.handleDropPayload($0, to: selectedEntry.date) }))
+                        .buttonStyle(NavButtonStyle())
+                        .disabled(isAtFirstDay)
+                        .help("Previous day")
+                        
+                        Text(manager.descriptor(for: manager.selectedDate))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(.primary.opacity(0.85))
+                            .frame(maxWidth: .infinity)
+                        
+                        Button(action: manager.goToNextDay) {
+                            Image(systemName: "chevron.right")
+                        }
+                        .buttonStyle(NavButtonStyle())
+                        .disabled(isAtLastDay)
+                        .help("Next day")
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 16)
+                    .padding(.bottom, 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        clearFocusDueToUser()
                     }
                     
-                    Spacer(minLength: 16)
+                    // Subtitle
+                    Text("Focus on the most important tasks")
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 18)
+                    .padding(.bottom, 12)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             clearFocusDueToUser()
                         }
+                    
+                    // Main focus content (no scroll)
+                    VStack(alignment: .leading, spacing: 0) {
+                        if let selectedEntry = manager.dayEntries.first(where: { Calendar.current.isDate($0.date, inSameDayAs: manager.selectedDate) }) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    ForEach(selectedEntry.snapshot.tasks) { task in
+                                        FocusTaskRow(
+                                            task: task,
+                                            isHighlighted: manager.highlightedTaskID == task.id,
+                                            focusBinding: $panelFocus,
+                                            onToggle: { manager.toggleTaskCompletion(on: selectedEntry.date, taskID: task.id) },
+                                            onTextChange: { manager.updateTaskText(on: selectedEntry.date, taskID: task.id, text: $0) },
+                                            onNoteChange: { manager.updateNote(on: selectedEntry.date, taskID: task.id, note: $0) },
+                                            onClear: { manager.clearTask(on: selectedEntry.date, taskID: task.id) },
+                                            onMoveToOverflow: { manager.moveFocusTaskToOverflow(on: selectedEntry.date, taskID: task.id) },
+                                            onMoveToInbox: { manager.moveFocusTaskToInbox(on: selectedEntry.date, taskID: task.id) }
+                                        )
+                                        .onDrag {
+                                            guard canDrag(task: task) else { return NSItemProvider() }
+                                            return NSItemProvider(object: manager.dragPayload(for: selectedEntry.date, taskID: task.id) as NSString)
+                                        }
+                                    }
+                                }
+
+                                OverflowList(manager: manager)
+                                    .padding(.horizontal, 2)
+                            }
+                            .padding(.horizontal, 18)
+                            .id(selectedEntry.date)
+                            .onDrop(of: [UTType.utf8PlainText], delegate: DropDelegate(onDrop: { manager.handleDropPayload($0, to: selectedEntry.date) }))
+                        }
+                        
+                        Spacer(minLength: 16)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                clearFocusDueToUser()
+                            }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .allowsHitTesting(!manager.isNotesPanelVisible)
                 
                 Divider()
                     .padding(.horizontal, 12)
@@ -139,8 +142,13 @@ struct ToDoPanel: View {
                     .help("Toggle Inbox")
 
                     Button(action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            manager.toggleNotesPanelVisibility()
+                        if manager.openNotesInFloatingByDefault {
+                            openNotesWindow()
+                            manager.hideNotesPanel()
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                manager.toggleNotesPanelVisibility()
+                            }
                         }
                     }) {
                         Image(systemName: manager.isNotesPanelVisible ? "square.and.pencil.circle.fill" : "square.and.pencil")
@@ -226,7 +234,12 @@ struct ToDoPanel: View {
         .onDisappear {
             manager.focusedTaskID = nil
             setPanelFocus(.placeholder)
-            manager.hideNotesPanel()
+            if !manager.keepInboxPanelOpenBetweenSessions {
+                manager.hideInboxPanel()
+            }
+            if !manager.keepNotesPanelOpenBetweenSessions {
+                manager.hideNotesPanel()
+            }
         }
         .onChange(of: panelFocus) { newValue in
             let taskID = newValue?.taskID
@@ -251,6 +264,16 @@ struct ToDoPanel: View {
         .onChange(of: manager.selectedDate) { _ in
             userClearedFocus = false
             focusFirstEmptyTaskIfAvailable()
+        }
+        .onChange(of: manager.isNotesPanelVisible) { visible in
+            if visible {
+                setPanelFocus(.placeholder)
+                manager.focusedTaskID = nil
+                manager.focusedInboxIndex = nil
+                manager.focusedOverflowIndex = nil
+            } else {
+                focusFirstEmptyTaskIfAvailable()
+            }
         }
     }
     
