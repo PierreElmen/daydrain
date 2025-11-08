@@ -282,8 +282,15 @@ final class NotesTextViewImpl: NSTextView {
     private let markdownBaseFont = NSFont.systemFont(ofSize: 13, weight: .regular)
     private lazy var markdownBoldFont: NSFont = NSFontManager.shared.convert(markdownBaseFont, toHaveTrait: .boldFontMask)
     private lazy var markdownItalicFont: NSFont = NSFontManager.shared.convert(markdownBaseFont, toHaveTrait: .italicFontMask)
-    private let markerColor = NSColor.secondaryLabelColor
+    private let inlineMarkerColor = NSColor.clear
+    private let bulletMarkerColor = NSColor.secondaryLabelColor
     private var isApplyingMarkdownAttributes = false
+    private var pendingHighlightWorkItem: DispatchWorkItem?
+    private static let highlightDebounceInterval: TimeInterval = 0.05
+
+    deinit {
+        pendingHighlightWorkItem?.cancel()
+    }
 
     fileprivate var markdownBaseAttributes: [NSAttributedString.Key: Any] {
         [
@@ -351,7 +358,7 @@ final class NotesTextViewImpl: NSTextView {
 
     override func didChangeText() {
         super.didChangeText()
-        refreshMarkdownHighlights()
+        scheduleHighlightRefresh()
     }
 
     private func wrapSelection(with token: String) {
@@ -497,6 +504,7 @@ final class NotesTextViewImpl: NSTextView {
     }
 
     func refreshMarkdownHighlights() {
+        pendingHighlightWorkItem?.cancel()
         guard !isApplyingMarkdownAttributes else { return }
         guard let textStorage = textStorage else { return }
 
@@ -506,6 +514,9 @@ final class NotesTextViewImpl: NSTextView {
         let currentSelection = selectedRange
         let fullText = textStorage.string as NSString
         let fullLength = fullText.length
+
+        textStorage.beginEditing()
+        defer { textStorage.endEditing() }
 
         if fullLength > 0 {
             let fullRange = NSRange(location: 0, length: fullLength)
@@ -578,7 +589,7 @@ final class NotesTextViewImpl: NSTextView {
             guard let result = result, result.numberOfRanges >= 3 else { return }
             let markerRange = result.range(at: 2)
             guard markerRange.length > 0 else { return }
-            textStorage.addAttribute(.foregroundColor, value: markerColor, range: markerRange)
+            textStorage.addAttribute(.foregroundColor, value: bulletMarkerColor, range: markerRange)
         }
     }
 
@@ -587,12 +598,21 @@ final class NotesTextViewImpl: NSTextView {
         guard markerLength > 0, range.length >= markerLength * 2 else { return }
 
         let startRange = NSRange(location: range.location, length: markerLength)
-        textStorage.addAttribute(.foregroundColor, value: markerColor, range: startRange)
+        textStorage.addAttribute(.foregroundColor, value: inlineMarkerColor, range: startRange)
 
         let endLocation = range.location + range.length - markerLength
         guard endLocation >= range.location else { return }
         let endRange = NSRange(location: endLocation, length: markerLength)
-        textStorage.addAttribute(.foregroundColor, value: markerColor, range: endRange)
+        textStorage.addAttribute(.foregroundColor, value: inlineMarkerColor, range: endRange)
+    }
+
+    private func scheduleHighlightRefresh() {
+        pendingHighlightWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.refreshMarkdownHighlights()
+        }
+        pendingHighlightWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.highlightDebounceInterval, execute: workItem)
     }
 }
 

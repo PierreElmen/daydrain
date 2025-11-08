@@ -16,8 +16,8 @@ struct FloatingNoteView: View {
 
     @State private var draft: String
     @State private var isEditorFocused: Bool
-    @State private var isHovering: Bool = false
     @State private var isHeaderHovering: Bool = false
+    @State private var isTopHovering: Bool = false
 
     init(manager: ToDoManager, viewModel: FloatingNoteViewModel, onClose: @escaping () -> Void) {
         self.manager = manager
@@ -35,7 +35,7 @@ struct FloatingNoteView: View {
     }
 
     private var headerOpacity: Double {
-        (isHovering || isHeaderHovering) ? 1 : 0
+        (isTopHovering || isHeaderHovering) ? 1 : 0
     }
 
     private var headerTitle: String {
@@ -75,13 +75,24 @@ struct FloatingNoteView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.top, 64)
+            .padding(.top, 24)
             .padding(.bottom, 24)
+
+            HoverCaptureView { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isTopHovering = hovering
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 80)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
 
             header
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .opacity(headerOpacity)
+                .allowsHitTesting(headerOpacity > 0)
         }
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
@@ -95,11 +106,6 @@ struct FloatingNoteView: View {
         .onReceive(manager.$currentNote) { note in
             if note.content != draft {
                 draft = note.content
-            }
-        }
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.25)) {
-                isHovering = hovering
             }
         }
     }
@@ -138,8 +144,12 @@ struct FloatingNoteView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.16))
+            VisualEffectBlurView(material: .menu, blendingMode: .withinWindow)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.14))
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: Color.black.opacity(0.16), radius: 18, x: 0, y: 12)
@@ -192,5 +202,69 @@ private struct VisualEffectBlurView: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
+    }
+}
+
+private struct HoverCaptureView: NSViewRepresentable {
+    var onHover: (Bool) -> Void
+
+    init(onHover: @escaping (Bool) -> Void) {
+        self.onHover = onHover
+    }
+
+    func makeNSView(context: Context) -> HoverCaptureNSView {
+        let view = HoverCaptureNSView()
+        view.onHover = onHover
+        return view
+    }
+
+    func updateNSView(_ nsView: HoverCaptureNSView, context: Context) {
+        nsView.onHover = onHover
+    }
+}
+
+private final class HoverCaptureNSView: NSView {
+    var onHover: ((Bool) -> Void)?
+    private var trackingArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func updateTrackingAreas() {
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let options: NSTrackingArea.Options = [
+            .mouseEnteredAndExited,
+            .activeAlways,
+            .inVisibleRect
+        ]
+        let area = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHover?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHover?(false)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }

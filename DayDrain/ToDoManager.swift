@@ -764,7 +764,7 @@ final class ToDoManager: ObservableObject {
         } else {
             loadWeek(containing: today)
         }
-        notesManager.refreshForCurrentDay(reference: today)
+        _ = notesManager.refreshForCurrentDay(reference: today)
         alignNoteWithSelectedDay()
     }
 
@@ -978,7 +978,7 @@ final class ToDoManager: ObservableObject {
             }
     }
 
-    private func alignNoteWithSelectedDay() {
+    func alignNoteWithSelectedDay() {
         observeNote(for: selectedDate)
     }
 

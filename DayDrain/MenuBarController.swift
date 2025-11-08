@@ -216,8 +216,10 @@ final class MenuBarController {
                 self?.openSettings()
             },
             openNotesWindow: { [weak self] in
-                self?.floatingNoteWindow.show()
-                self?.hidePanel()
+                guard let self else { return }
+                toDoManager.alignNoteWithSelectedDay()
+                floatingNoteWindow.show()
+                hidePanel()
             },
             quitApplication: { [weak self] in
                 self?.hidePanel()
