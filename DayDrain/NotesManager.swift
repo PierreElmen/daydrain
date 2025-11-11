@@ -41,7 +41,7 @@ final class NotesManager {
     private var retentionDays: Int? {
         get {
             let stored = defaults.integer(forKey: Constants.retentionDefaultsKey)
-            if defaults.object(forKey: Constants.retentionDefaultsKey) == nil { return RetentionPolicy.thirty.keepDays }
+            if defaults.object(forKey: Constants.retentionDefaultsKey) == nil { return RetentionPolicy.never.keepDays }
             return stored > 0 ? stored : nil
         }
         set {

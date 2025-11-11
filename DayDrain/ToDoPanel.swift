@@ -43,7 +43,6 @@ struct ToDoPanel: View {
                             Image(systemName: "chevron.left")
                         }
                         .buttonStyle(NavButtonStyle())
-                        .disabled(isAtFirstDay)
                         .help("Previous day")
                         
                         Text(manager.descriptor(for: manager.selectedDate))
@@ -55,7 +54,6 @@ struct ToDoPanel: View {
                             Image(systemName: "chevron.right")
                         }
                         .buttonStyle(NavButtonStyle())
-                        .disabled(isAtLastDay)
                         .help("Next day")
                     }
                     .padding(.horizontal, 18)
@@ -284,16 +282,6 @@ struct ToDoPanel: View {
 }
 
 private extension ToDoPanel {
-    var isAtFirstDay: Bool {
-        guard let first = manager.weekDates.first else { return true }
-        return Calendar.current.isDate(manager.selectedDate, inSameDayAs: first)
-    }
-
-    var isAtLastDay: Bool {
-        guard let last = manager.weekDates.last else { return true }
-        return Calendar.current.isDate(manager.selectedDate, inSameDayAs: last)
-    }
-
     var firstEmptyFocusTaskID: FocusTask.ID? {
         manager.tasks(for: manager.selectedDate)
             .first(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
