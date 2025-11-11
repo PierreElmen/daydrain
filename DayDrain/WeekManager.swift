@@ -145,25 +145,8 @@ final class WeekManager {
     }
 
     private func makeSnapshot(for date: Date) -> DailyFocusSnapshot {
-        var tasks = Self.defaultTasks()
-        let previousDate = isoCalendar.date(byAdding: .day, value: -1, to: date)
-
-        if let previousDate,
-           let previousData = try? Data(contentsOf: fileURL(for: isoFormatter.string(from: previousDate))),
-           let previousSnapshot = try? JSONDecoder().decode(DailyFocusSnapshot.self, from: previousData) {
-            var slotIndex = 0
-            for task in previousSnapshot.tasks where !task.done {
-                let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty, slotIndex < tasks.count else { continue }
-                tasks[slotIndex].text = String(trimmed.prefix(80))
-                tasks[slotIndex].note = String(task.note.prefix(200))
-                tasks[slotIndex].done = false
-                slotIndex += 1
-            }
-        }
-
         let iso = isoFormatter.string(from: startOfDay(for: date))
-        return DailyFocusSnapshot(date: iso, tasks: tasks, mood: nil, overflow: [], inbox: nil, uiState: DailyUIState())
+        return DailyFocusSnapshot(date: iso, tasks: Self.defaultTasks(), mood: nil, overflow: [], inbox: nil, uiState: DailyUIState())
     }
 
     private func sanitizedSnapshot(_ snapshot: DailyFocusSnapshot) -> DailyFocusSnapshot {

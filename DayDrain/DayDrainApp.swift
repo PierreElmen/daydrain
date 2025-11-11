@@ -16,7 +16,7 @@ struct DayDrainApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView(dayManager: dayManager)
+            SettingsView(dayManager: dayManager, toDoManager: toDoManager)
         }
     }
 }

@@ -11,6 +11,7 @@ final class MenuBarController {
     private let dayManager: DayManager
     private let toDoManager: ToDoManager
     private var settingsWindowController: NSWindowController?
+    private let floatingNoteWindow: FloatingNoteWindow
     private var latestProgress: Double = 0
     private var latestMenuValue: String = ""
     private let statusItemHorizontalPadding: CGFloat = 8
@@ -27,6 +28,7 @@ final class MenuBarController {
         self.dayManager = dayManager
         self.toDoManager = toDoManager
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        self.floatingNoteWindow = FloatingNoteWindow(toDoManager: toDoManager)
         statusItem.isVisible = true
         statusItem.button?.toolTip = "DayDrain"
         statusItem.button?.target = self
@@ -180,6 +182,12 @@ final class MenuBarController {
         if !dayManager.persistOverflowState {
             toDoManager.resetOverflowToCollapsed()
         }
+        if !toDoManager.keepInboxPanelOpenBetweenSessions {
+            toDoManager.hideInboxPanel()
+        }
+        if !toDoManager.keepNotesPanelOpenBetweenSessions {
+            toDoManager.hideNotesPanel()
+        }
         updatePopoverContent()
         panelPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         if let window = panelPopover.contentViewController?.view.window {
@@ -189,6 +197,15 @@ final class MenuBarController {
 
     private func hidePanel() {
         panelPopover.performClose(nil)
+        if !dayManager.persistOverflowState {
+            toDoManager.resetOverflowToCollapsed()
+        }
+        if !toDoManager.keepInboxPanelOpenBetweenSessions {
+            toDoManager.hideInboxPanel()
+        }
+        if !toDoManager.keepNotesPanelOpenBetweenSessions {
+            toDoManager.hideNotesPanel()
+        }
     }
 
     private func updatePopoverContent() {
@@ -197,6 +214,12 @@ final class MenuBarController {
             openSettings: { [weak self] in
                 self?.hidePanel()
                 self?.openSettings()
+            },
+            openNotesWindow: { [weak self] in
+                guard let self else { return }
+                toDoManager.alignNoteWithSelectedDay()
+                floatingNoteWindow.show()
+                hidePanel()
             },
             quitApplication: { [weak self] in
                 self?.hidePanel()
@@ -321,7 +344,7 @@ final class MenuBarController {
             return
         }
 
-        let hostingController = NSHostingController(rootView: SettingsView(dayManager: dayManager))
+        let hostingController = NSHostingController(rootView: SettingsView(dayManager: dayManager, toDoManager: toDoManager))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
             styleMask: [.titled, .closable, .miniaturizable],

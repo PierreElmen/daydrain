@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import AppKit
 
 @MainActor
 final class ToDoManager: ObservableObject {
@@ -21,10 +22,16 @@ final class ToDoManager: ObservableObject {
     @Published private(set) var isOverflowCollapsed: Bool
     @Published private(set) var inboxTasks: [InboxTask]
     @Published private(set) var isInboxCollapsed: Bool
+    @Published var currentNote: DailyNote
+    @Published var selectedNoteDate: Date
     @Published var focusedTaskID: FocusTask.ID?
     @Published var focusedOverflowIndex: Int?
     @Published var focusedInboxIndex: Int?
     @Published var isInboxPanelVisible: Bool
+    @Published var isNotesPanelVisible: Bool
+    @Published var keepInboxPanelOpenBetweenSessions: Bool
+    @Published var keepNotesPanelOpenBetweenSessions: Bool
+    @Published var openNotesInFloatingByDefault: Bool
     @Published var isWindDownPromptVisible: Bool
 
     var onTaskDone: ((FocusTask, Date) -> Void)?
@@ -53,10 +60,18 @@ final class ToDoManager: ObservableObject {
     private let weekManager: WeekManager
     private let overflowManager: OverflowManager
     private let inboxManager: InboxManager
+    private let notesManager: NotesManager
     private var midnightTimer: Timer?
     private var currentDay: Date
     private var calendar = Calendar.current
-    private let focusCarryoverLookbackDays = 7
+    private let focusTaskArchiveLookbackDays = 7
+    private var noteCancellable: AnyCancellable?
+    private let defaults = UserDefaults.standard
+    private let keepInboxPanelOpenKey = "ToDoManagerKeepInboxPanelOpen"
+    private let keepNotesPanelOpenKey = "ToDoManagerKeepNotesPanelOpen"
+    private let legacyCloseNotesWithPanelKey = "ToDoManagerCloseNotesWithPanel"
+    private let openNotesFloatingKey = "ToDoManagerOpenNotesFloating"
+    private var cancellables: Set<AnyCancellable> = []
 
     private lazy var isoFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -77,6 +92,17 @@ final class ToDoManager: ObservableObject {
         self.weekManager = weekManager
         self.overflowManager = OverflowManager(weekManager: weekManager)
         self.inboxManager = InboxManager()
+        self.notesManager = NotesManager()
+        let storedKeepInbox = defaults.object(forKey: keepInboxPanelOpenKey) as? Bool ?? false
+        let storedKeepNotes: Bool
+        if let value = defaults.object(forKey: keepNotesPanelOpenKey) as? Bool {
+            storedKeepNotes = value
+        } else if let legacy = defaults.object(forKey: legacyCloseNotesWithPanelKey) as? Bool {
+            storedKeepNotes = !legacy
+        } else {
+            storedKeepNotes = false
+        }
+        let storedOpenFloating = defaults.object(forKey: openNotesFloatingKey) as? Bool ?? false
         self.currentDay = Self.startOfDay(for: Date())
         self.selectedDate = currentDay
         self.weekSummary = .empty
@@ -89,13 +115,21 @@ final class ToDoManager: ObservableObject {
         self.isInboxCollapsed = false
         self.isWindDownPromptVisible = false
         self.isInboxPanelVisible = false
+        self.isNotesPanelVisible = false
         self.selectedDayMood = nil
         self.focusedOverflowIndex = nil
         self.focusedInboxIndex = nil
+        self.selectedNoteDate = currentDay
+        self.currentNote = notesManager.currentNote(for: currentDay)
+        self.keepInboxPanelOpenBetweenSessions = storedKeepInbox
+        self.keepNotesPanelOpenBetweenSessions = storedKeepNotes
+        self.openNotesInFloatingByDefault = storedOpenFloating
 
-        carryForwardIncompleteFocusTasks(upTo: currentDay)
+        archiveIncompleteFocusTasksToInbox(upTo: currentDay)
         ensureCurrentWeekLoaded()
         scheduleMidnightRefresh()
+        observeNote(for: currentDay)
+        bindPreferences()
     }
 
     deinit {
@@ -121,24 +155,41 @@ final class ToDoManager: ObservableObject {
         focusedOverflowIndex = nil
         focusedInboxIndex = nil
         updateSelectionState()
+        alignNoteWithSelectedDay()
     }
 
     func goToPreviousDay() {
-        guard let currentIndex = indexOfDay(selectedDate), currentIndex > 0 else { return }
-        selectedDate = dayEntries[currentIndex - 1].date
+        guard let previousDate = calendar.date(byAdding: .day, value: -1, to: selectedDate) else { return }
+        if let currentIndex = indexOfDay(selectedDate), currentIndex > 0 {
+            selectedDate = dayEntries[currentIndex - 1].date
+            focusedTaskID = nil
+            focusedOverflowIndex = nil
+            focusedInboxIndex = nil
+            updateSelectionState()
+            alignNoteWithSelectedDay()
+            return
+        }
         focusedTaskID = nil
         focusedOverflowIndex = nil
         focusedInboxIndex = nil
-        updateSelectionState()
+        loadWeek(containing: previousDate, preferredDate: previousDate)
     }
 
     func goToNextDay() {
-        guard let currentIndex = indexOfDay(selectedDate), currentIndex < dayEntries.count - 1 else { return }
-        selectedDate = dayEntries[currentIndex + 1].date
+        guard let nextDate = calendar.date(byAdding: .day, value: 1, to: selectedDate) else { return }
+        if let currentIndex = indexOfDay(selectedDate), currentIndex < dayEntries.count - 1 {
+            selectedDate = dayEntries[currentIndex + 1].date
+            focusedTaskID = nil
+            focusedOverflowIndex = nil
+            focusedInboxIndex = nil
+            updateSelectionState()
+            alignNoteWithSelectedDay()
+            return
+        }
         focusedTaskID = nil
         focusedOverflowIndex = nil
         focusedInboxIndex = nil
-        updateSelectionState()
+        loadWeek(containing: nextDate, preferredDate: nextDate)
     }
 
     func tasks(for date: Date) -> [FocusTask] {
@@ -418,6 +469,44 @@ final class ToDoManager: ObservableObject {
         focusedInboxIndex = nil
     }
 
+    func toggleNotesPanelVisibility() {
+        isNotesPanelVisible.toggle()
+        if isNotesPanelVisible {
+            focusedTaskID = nil
+            focusedOverflowIndex = nil
+            focusedInboxIndex = nil
+        }
+    }
+
+    func hideNotesPanel() {
+        isNotesPanelVisible = false
+    }
+
+    func jumpToPreviousDay() {
+        guard let previous = calendar.date(byAdding: .day, value: -1, to: selectedNoteDate) else { return }
+        updateNoteSelection(to: previous)
+    }
+
+    func jumpToNextDay() {
+        guard let next = calendar.date(byAdding: .day, value: 1, to: selectedNoteDate) else { return }
+        updateNoteSelection(to: next)
+    }
+
+    func updateNoteContent(_ content: String) {
+        notesManager.updateContent(content, for: selectedNoteDate)
+    }
+
+    func persistCurrentNote() {
+        notesManager.forceSaveCurrentNote(for: selectedNoteDate)
+    }
+
+    func copyNoteToClipboard() {
+        let note = notesManager.copyNote(for: selectedNoteDate)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(note.content, forType: .string)
+    }
+
     func toggleInboxCollapsed() {
         let updated = inboxManager.update { state in
             state.isCollapsed.toggle()
@@ -683,86 +772,82 @@ final class ToDoManager: ObservableObject {
         if today != currentDay {
             let previousDay = currentDay
             currentDay = today
-            carryForwardIncompleteFocusTasks(upTo: today)
+            archiveIncompleteFocusTasksToInbox(from: previousDay, upTo: today)
             moveIncompleteOverflowToInbox(from: previousDay)
             ensureCurrentWeekLoaded()
         } else {
             loadWeek(containing: today)
         }
+        _ = notesManager.refreshForCurrentDay(reference: today)
+        alignNoteWithSelectedDay()
     }
 
     // MARK: - Private
 
-    private func carryForwardIncompleteFocusTasks(upTo targetDate: Date) {
-        let upperBound = Self.startOfDay(for: targetDate)
-        guard let start = calendar.date(byAdding: .day, value: -focusCarryoverLookbackDays, to: upperBound) else { return }
-        var current = Self.startOfDay(for: start)
+    private func bindPreferences() {
+        $keepInboxPanelOpenBetweenSessions
+            .dropFirst()
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.defaults.set(value, forKey: self.keepInboxPanelOpenKey)
+            }
+            .store(in: &cancellables)
 
-        while current < upperBound {
-            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
-            carryOverIncompleteFocusTasks(from: current, to: next)
-            current = next
-        }
+        $keepNotesPanelOpenBetweenSessions
+            .dropFirst()
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.defaults.set(value, forKey: self.keepNotesPanelOpenKey)
+            }
+            .store(in: &cancellables)
+
+        $openNotesInFloatingByDefault
+            .dropFirst()
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.defaults.set(value, forKey: self.openNotesFloatingKey)
+            }
+            .store(in: &cancellables)
     }
 
-    @discardableResult
-    private func carryOverIncompleteFocusTasks(from date: Date, to nextDate: Date) -> Bool {
-        var sourceSnapshot = weekManager.snapshot(for: date)
-        var carried: [(text: String, note: String, normalized: String, trimmedNote: String)] = []
+    private func archiveIncompleteFocusTasksToInbox(upTo targetDate: Date) {
+        guard let start = calendar.date(byAdding: .day, value: -focusTaskArchiveLookbackDays, to: targetDate) else { return }
+        archiveIncompleteFocusTasksToInbox(from: start, upTo: targetDate)
+    }
 
-        for index in sourceSnapshot.tasks.indices {
-            let task = sourceSnapshot.tasks[index]
-            let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, !task.done else { continue }
-            let sanitizedText = String(trimmed.prefix(80))
-            let sanitizedNote = String(task.note.prefix(200))
-            let normalizedText = sanitizedText.lowercased()
-            let trimmedNote = sanitizedNote.trimmingCharacters(in: .whitespacesAndNewlines)
-            carried.append((text: sanitizedText, note: sanitizedNote, normalized: normalizedText, trimmedNote: trimmedNote))
-            sourceSnapshot.tasks[index].text = ""
-            sourceSnapshot.tasks[index].note = ""
-            sourceSnapshot.tasks[index].done = false
-        }
+    private func archiveIncompleteFocusTasksToInbox(from startDate: Date, upTo targetDate: Date) {
+        let lowerBound = Self.startOfDay(for: startDate)
+        let upperBound = Self.startOfDay(for: targetDate)
+        guard lowerBound < upperBound else { return }
 
-        guard !carried.isEmpty else { return false }
+        var current = lowerBound
+        var pending: [(task: InboxTask, normalized: String)] = []
 
-        var destinationSnapshot = weekManager.snapshot(for: nextDate)
-        var overflowed: [(text: String, note: String, normalized: String, trimmedNote: String)] = []
-
-        for carriedTask in carried {
-            if let slotIndex = destinationSnapshot.tasks.firstIndex(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-                destinationSnapshot.tasks[slotIndex].text = carriedTask.text
-                destinationSnapshot.tasks[slotIndex].note = carriedTask.note
-                destinationSnapshot.tasks[slotIndex].done = false
-            } else if let existingIndex = destinationSnapshot.tasks.firstIndex(where: {
-                $0.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == carriedTask.normalized
-            }) {
-                if destinationSnapshot.tasks[existingIndex].note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   !carriedTask.trimmedNote.isEmpty {
-                    destinationSnapshot.tasks[existingIndex].note = carriedTask.note
-                }
-                destinationSnapshot.tasks[existingIndex].done = false
-            } else {
-                overflowed.append(carriedTask)
+        while current < upperBound {
+            let snapshot = weekManager.snapshot(for: current)
+            for task in snapshot.tasks {
+                let trimmed = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, !task.done else { continue }
+                let inboxText = String(trimmed.prefix(160))
+                let normalized = Self.normalizedInboxText(for: inboxText)
+                pending.append((InboxTask(text: inboxText, priority: .medium, done: false), normalized))
             }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = Self.startOfDay(for: next)
         }
 
-        weekManager.save(snapshot: sourceSnapshot)
-        weekManager.save(snapshot: destinationSnapshot)
+        guard !pending.isEmpty else { return }
 
-        if !overflowed.isEmpty {
-            inboxManager.update { state in
+        inboxManager.update { state in
+            var seen = Set(state.tasks.map { Self.normalizedInboxText(for: $0.text) })
+            for entry in pending {
+                guard seen.insert(entry.normalized).inserted else { continue }
                 if state.isCollapsed {
                     state.isCollapsed = false
                 }
-                for item in overflowed {
-                    let inboxText = String(item.text.prefix(160))
-                    state.tasks.append(InboxTask(text: inboxText, priority: .medium, done: false))
-                }
+                state.tasks.append(entry.task)
             }
         }
-
-        return true
     }
 
     private func moveIncompleteOverflowToInbox(from date: Date) {
@@ -795,7 +880,7 @@ final class ToDoManager: ObservableObject {
         loadWeek(containing: currentDay)
     }
 
-    private func loadWeek(containing date: Date) {
+    private func loadWeek(containing date: Date, preferredDate: Date? = nil) {
         let bounds = Self.weekBounds(containing: date)
         let snapshots = weekManager.fetchDays(startDate: bounds.start, endDate: bounds.end)
         dayEntries = snapshots.compactMap { snapshot in
@@ -803,7 +888,10 @@ final class ToDoManager: ObservableObject {
             return DayEntry(date: day, snapshot: snapshot)
         }.sorted { $0.date < $1.date }
 
-        if let index = indexOfDay(selectedDate) {
+        if let preferredDate,
+           let index = indexOfDay(preferredDate) {
+            selectedDate = dayEntries[index].date
+        } else if let index = indexOfDay(selectedDate) {
             selectedDate = dayEntries[index].date
         } else if let todayIndex = indexOfDay(currentDay) {
             selectedDate = dayEntries[todayIndex].date
@@ -813,6 +901,7 @@ final class ToDoManager: ObservableObject {
 
         updateSelectionState()
         updateSummary()
+        alignNoteWithSelectedDay()
     }
 
     private func updateSelectionState() {
@@ -862,6 +951,28 @@ final class ToDoManager: ObservableObject {
                 self?.scheduleMidnightRefresh()
             }
         }
+    }
+
+    private func observeNote(for date: Date) {
+        let normalized = Self.startOfDay(for: date)
+        selectedNoteDate = normalized
+        noteCancellable = notesManager.publisher(for: normalized)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] note in
+                self?.currentNote = note
+            }
+    }
+
+    func alignNoteWithSelectedDay() {
+        observeNote(for: selectedDate)
+    }
+
+    private func updateNoteSelection(to date: Date) {
+        observeNote(for: date)
+    }
+
+    private static func normalizedInboxText(for text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private static func startOfDay(for date: Date) -> Date {
