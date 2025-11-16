@@ -188,6 +188,11 @@ final class MenuBarController {
         if !toDoManager.keepNotesPanelOpenBetweenSessions {
             toDoManager.hideNotesPanel()
         }
+        if !toDoManager.openRecentDayOnLaunch {
+            toDoManager.jumpToCurrentDay(shouldAlignNote: !toDoManager.openRecentNoteOnLaunch)
+        } else if !toDoManager.openRecentNoteOnLaunch {
+            toDoManager.alignNoteWithCurrentDay()
+        }
         updatePopoverContent()
         panelPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         if let window = panelPopover.contentViewController?.view.window {
@@ -217,7 +222,9 @@ final class MenuBarController {
             },
             openNotesWindow: { [weak self] in
                 guard let self else { return }
-                toDoManager.alignNoteWithSelectedDay()
+                if !toDoManager.openRecentNoteOnLaunch {
+                    toDoManager.alignNoteWithCurrentDay()
+                }
                 floatingNoteWindow.show()
                 hidePanel()
             },

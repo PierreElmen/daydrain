@@ -32,6 +32,8 @@ final class ToDoManager: ObservableObject {
     @Published var keepInboxPanelOpenBetweenSessions: Bool
     @Published var keepNotesPanelOpenBetweenSessions: Bool
     @Published var openNotesInFloatingByDefault: Bool
+    @Published var openRecentDayOnLaunch: Bool
+    @Published var openRecentNoteOnLaunch: Bool
     @Published var isWindDownPromptVisible: Bool
 
     var onTaskDone: ((FocusTask, Date) -> Void)?
@@ -71,6 +73,8 @@ final class ToDoManager: ObservableObject {
     private let keepNotesPanelOpenKey = "ToDoManagerKeepNotesPanelOpen"
     private let legacyCloseNotesWithPanelKey = "ToDoManagerCloseNotesWithPanel"
     private let openNotesFloatingKey = "ToDoManagerOpenNotesFloating"
+    private let openRecentDayKey = "ToDoManagerOpenRecentDay"
+    private let openRecentNoteKey = "ToDoManagerOpenRecentNote"
     private var cancellables: Set<AnyCancellable> = []
 
     private lazy var isoFormatter: DateFormatter = {
@@ -103,6 +107,8 @@ final class ToDoManager: ObservableObject {
             storedKeepNotes = false
         }
         let storedOpenFloating = defaults.object(forKey: openNotesFloatingKey) as? Bool ?? false
+        let storedOpenRecentDay = defaults.object(forKey: openRecentDayKey) as? Bool ?? false
+        let storedOpenRecentNote = defaults.object(forKey: openRecentNoteKey) as? Bool ?? false
         self.currentDay = Self.startOfDay(for: Date())
         self.selectedDate = currentDay
         self.weekSummary = .empty
@@ -124,6 +130,8 @@ final class ToDoManager: ObservableObject {
         self.keepInboxPanelOpenBetweenSessions = storedKeepInbox
         self.keepNotesPanelOpenBetweenSessions = storedKeepNotes
         self.openNotesInFloatingByDefault = storedOpenFloating
+        self.openRecentDayOnLaunch = storedOpenRecentDay
+        self.openRecentNoteOnLaunch = storedOpenRecentNote
 
         archiveIncompleteFocusTasksToInbox(upTo: currentDay)
         ensureCurrentWeekLoaded()
@@ -190,6 +198,22 @@ final class ToDoManager: ObservableObject {
         focusedOverflowIndex = nil
         focusedInboxIndex = nil
         loadWeek(containing: nextDate, preferredDate: nextDate)
+    }
+
+    func jumpToCurrentDay(shouldAlignNote: Bool = true) {
+        focusedTaskID = nil
+        focusedOverflowIndex = nil
+        focusedInboxIndex = nil
+
+        if let todayIndex = indexOfDay(currentDay) {
+            selectedDate = dayEntries[todayIndex].date
+            updateSelectionState()
+            if shouldAlignNote {
+                alignNoteWithSelectedDay()
+            }
+        } else {
+            loadWeek(containing: currentDay, preferredDate: currentDay, alignNotes: shouldAlignNote)
+        }
     }
 
     func tasks(for date: Date) -> [FocusTask] {
@@ -475,6 +499,9 @@ final class ToDoManager: ObservableObject {
             focusedTaskID = nil
             focusedOverflowIndex = nil
             focusedInboxIndex = nil
+            if !openRecentNoteOnLaunch {
+                alignNoteWithCurrentDay()
+            }
         }
     }
 
@@ -732,8 +759,7 @@ final class ToDoManager: ObservableObject {
     }
 
     func triggerWindDownPrompt() {
-        selectedDate = currentDay
-        updateSelectionState()
+        jumpToCurrentDay(shouldAlignNote: false)
         withAnimation { isWindDownPromptVisible = true }
     }
 
@@ -808,6 +834,22 @@ final class ToDoManager: ObservableObject {
                 self.defaults.set(value, forKey: self.openNotesFloatingKey)
             }
             .store(in: &cancellables)
+
+        $openRecentDayOnLaunch
+            .dropFirst()
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.defaults.set(value, forKey: self.openRecentDayKey)
+            }
+            .store(in: &cancellables)
+
+        $openRecentNoteOnLaunch
+            .dropFirst()
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.defaults.set(value, forKey: self.openRecentNoteKey)
+            }
+            .store(in: &cancellables)
     }
 
     private func archiveIncompleteFocusTasksToInbox(upTo targetDate: Date) {
@@ -880,7 +922,7 @@ final class ToDoManager: ObservableObject {
         loadWeek(containing: currentDay)
     }
 
-    private func loadWeek(containing date: Date, preferredDate: Date? = nil) {
+    private func loadWeek(containing date: Date, preferredDate: Date? = nil, alignNotes: Bool = true) {
         let bounds = Self.weekBounds(containing: date)
         let snapshots = weekManager.fetchDays(startDate: bounds.start, endDate: bounds.end)
         dayEntries = snapshots.compactMap { snapshot in
@@ -901,7 +943,9 @@ final class ToDoManager: ObservableObject {
 
         updateSelectionState()
         updateSummary()
-        alignNoteWithSelectedDay()
+        if alignNotes {
+            alignNoteWithSelectedDay()
+        }
     }
 
     private func updateSelectionState() {
@@ -965,6 +1009,10 @@ final class ToDoManager: ObservableObject {
 
     func alignNoteWithSelectedDay() {
         observeNote(for: selectedDate)
+    }
+
+    func alignNoteWithCurrentDay() {
+        observeNote(for: currentDay)
     }
 
     private func updateNoteSelection(to date: Date) {

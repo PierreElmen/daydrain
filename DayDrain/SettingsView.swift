@@ -79,6 +79,16 @@ private struct GeneralSettingsView: View {
                     .font(.callout)
                     .foregroundColor(.secondary)
             }
+
+            Section(header: Text("Panel Defaults")) {
+                Toggle("Open recent day", isOn: $toDoManager.openRecentDayOnLaunch)
+
+                Toggle("Open recent note", isOn: $toDoManager.openRecentNoteOnLaunch)
+
+                Text("Enable these to reopen the last day or note you viewed instead of jumping straight to today.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
