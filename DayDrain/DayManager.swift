@@ -1,19 +1,108 @@
 import SwiftUI
 import Combine
 
-/// Represents the user configurable settings that drive the draining bar.
-struct WorkdaySettings: Codable {
-    struct TimeComponents: Codable {
-        var hour: Int
-        var minute: Int
+struct TimeComponents: Codable, Equatable {
+    var hour: Int
+    var minute: Int
+
+    func date(on date: Date) -> Date? {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: date)
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return calendar.date(from: components)
     }
 
+    static func from(date: Date) -> TimeComponents {
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.hour, .minute], from: date)
+        return .init(hour: components.hour ?? 0, minute: components.minute ?? 0)
+    }
+}
+
+/// Represents a configurable slice of the workday.
+struct WorkBlock: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var start: TimeComponents
+    var end: TimeComponents
+    var label: String? = nil
+
+    var isValid: Bool {
+        start.totalMinutes < end.totalMinutes
+    }
+
+    var duration: TimeInterval {
+        let minutes = max(0, end.totalMinutes - start.totalMinutes)
+        return TimeInterval(minutes * 60)
+    }
+
+    func startDate(on date: Date) -> Date? {
+        start.date(on: date)
+    }
+
+    func endDate(on date: Date) -> Date? {
+        end.date(on: date)
+    }
+}
+
+extension TimeComponents {
+    var totalMinutes: Int {
+        (hour * 60) + minute
+    }
+}
+
+/// Represents the user configurable settings that drive the draining bar.
+struct WorkdaySettings: Codable {
     var selectedWeekdays: [Int]
-    var startTime: TimeComponents
-    var endTime: TimeComponents
     var displayMode: DayDisplayMode.RawValue
     var showMenuValue: Bool = false
     var persistOverflowState: Bool = false
+    var workBlocks: [Int: [WorkBlock]] = [:]
+    var startTime: TimeComponents? // Legacy support
+    var endTime: TimeComponents? // Legacy support
+
+    enum CodingKeys: String, CodingKey {
+        case selectedWeekdays
+        case startTime
+        case endTime
+        case displayMode
+        case showMenuValue
+        case persistOverflowState
+        case workBlocks
+    }
+
+    init(selectedWeekdays: [Int],
+         displayMode: DayDisplayMode.RawValue,
+         showMenuValue: Bool,
+         persistOverflowState: Bool,
+         workBlocks: [Int: [WorkBlock]]) {
+        self.selectedWeekdays = selectedWeekdays
+        self.displayMode = displayMode
+        self.showMenuValue = showMenuValue
+        self.persistOverflowState = persistOverflowState
+        self.workBlocks = workBlocks
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.selectedWeekdays = try container.decodeIfPresent([Int].self, forKey: .selectedWeekdays) ?? []
+        self.displayMode = try container.decodeIfPresent(String.self, forKey: .displayMode) ?? DayDisplayMode.percentage.rawValue
+        self.showMenuValue = try container.decodeIfPresent(Bool.self, forKey: .showMenuValue) ?? false
+        self.persistOverflowState = try container.decodeIfPresent(Bool.self, forKey: .persistOverflowState) ?? false
+        self.workBlocks = try container.decodeIfPresent([Int: [WorkBlock]].self, forKey: .workBlocks) ?? [:]
+        self.startTime = try container.decodeIfPresent(TimeComponents.self, forKey: .startTime)
+        self.endTime = try container.decodeIfPresent(TimeComponents.self, forKey: .endTime)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(selectedWeekdays, forKey: .selectedWeekdays)
+        try container.encode(displayMode, forKey: .displayMode)
+        try container.encode(showMenuValue, forKey: .showMenuValue)
+        try container.encode(persistOverflowState, forKey: .persistOverflowState)
+        try container.encode(workBlocks, forKey: .workBlocks)
+    }
 }
 
 /// Days of the week available for configuration. Calendar weekday values follow the user's locale
@@ -60,9 +149,7 @@ enum DayDisplayMode: String, CaseIterable, Identifiable, Codable {
 /// the values required to render the menu bar item.
 @MainActor
 final class DayManager: ObservableObject {
-    @Published var selectedWeekdays: Set<Weekday>
-    @Published var startTime: Date
-    @Published var endTime: Date
+    @Published var workBlocks: [Weekday: [WorkBlock]]
     @Published var displayMode: DayDisplayMode
     @Published var showMenuValue: Bool
     @Published var persistOverflowState: Bool
@@ -77,24 +164,38 @@ final class DayManager: ObservableObject {
     private var timer: Timer?
     private var cancellables: Set<AnyCancellable> = []
     private var hasTriggeredCompletionForCurrentDay = false
+    private var lastCompletionDay: DateComponents?
 
     private let defaults = UserDefaults.standard
     private let settingsKey = "WorkdaySettings"
 
     init() {
         let defaults = Self.defaultSettings()
+
         if let data = self.defaults.data(forKey: settingsKey),
            let decoded = try? JSONDecoder().decode(WorkdaySettings.self, from: data) {
-            self.selectedWeekdays = Set(decoded.selectedWeekdays.compactMap(Weekday.init(rawValue:)))
-            self.startTime = DayManager.date(from: decoded.startTime) ?? defaults.startTime
-            self.endTime = DayManager.date(from: decoded.endTime) ?? defaults.endTime
-            self.displayMode = DayDisplayMode(rawValue: decoded.displayMode) ?? .percentage
+            self.displayMode = DayDisplayMode(rawValue: decoded.displayMode) ?? defaults.displayMode
             self.showMenuValue = decoded.showMenuValue
             self.persistOverflowState = decoded.persistOverflowState
+
+            let migratedBlocks = decoded.workBlocks.reduce(into: [Weekday: [WorkBlock]]()) { partialResult, item in
+                guard let weekday = Weekday(rawValue: item.key) else { return }
+                partialResult[weekday] = item.value
+            }
+
+            if !migratedBlocks.isEmpty {
+                self.workBlocks = migratedBlocks
+            } else if let legacyStart = decoded.startTime, let legacyEnd = decoded.endTime {
+                let legacyBlock = WorkBlock(start: legacyStart, end: legacyEnd)
+                let weekdays = decoded.selectedWeekdays.compactMap(Weekday.init(rawValue:))
+                var legacySchedule: [Weekday: [WorkBlock]] = [:]
+                weekdays.forEach { legacySchedule[$0] = [legacyBlock] }
+                self.workBlocks = legacySchedule.isEmpty ? defaults.workBlocks : legacySchedule
+            } else {
+                self.workBlocks = defaults.workBlocks
+            }
         } else {
-            self.selectedWeekdays = defaults.selectedWeekdays
-            self.startTime = defaults.startTime
-            self.endTime = defaults.endTime
+            self.workBlocks = defaults.workBlocks
             self.displayMode = defaults.displayMode
             self.showMenuValue = defaults.showMenuValue
             self.persistOverflowState = defaults.persistOverflowState
@@ -109,31 +210,24 @@ final class DayManager: ObservableObject {
         timer?.invalidate()
     }
 
-    private static func defaultSettings() -> (selectedWeekdays: Set<Weekday>, startTime: Date, endTime: Date, displayMode: DayDisplayMode, showMenuValue: Bool, persistOverflowState: Bool) {
+    private static func defaultSettings() -> (workBlocks: [Weekday: [WorkBlock]], displayMode: DayDisplayMode, showMenuValue: Bool, persistOverflowState: Bool) {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: Date())
         let defaultStart = calendar.date(byAdding: DateComponents(hour: 9), to: startOfDay) ?? Date()
         let defaultEnd = calendar.date(byAdding: DateComponents(hour: 17), to: startOfDay) ?? Date()
-        return (selectedWeekdays: Set([.monday, .tuesday, .wednesday, .thursday, .friday]),
-                startTime: defaultStart,
-                endTime: defaultEnd,
+        let defaultBlock = WorkBlock(start: TimeComponents.from(date: defaultStart), end: TimeComponents.from(date: defaultEnd))
+        let weekdays: [Weekday] = [.monday, .tuesday, .wednesday, .thursday, .friday]
+        var blocks: [Weekday: [WorkBlock]] = [:]
+        weekdays.forEach { blocks[$0] = [defaultBlock] }
+
+        return (workBlocks: blocks,
                 displayMode: .percentage,
                 showMenuValue: false,
                 persistOverflowState: false)
     }
 
     private func bindSettingsChanges() {
-        $selectedWeekdays
-            .dropFirst()
-            .sink { [weak self] _ in self?.persistAndRefresh() }
-            .store(in: &cancellables)
-
-        $startTime
-            .dropFirst()
-            .sink { [weak self] _ in self?.persistAndRefresh() }
-            .store(in: &cancellables)
-
-        $endTime
+        $workBlocks
             .dropFirst()
             .sink { [weak self] _ in self?.persistAndRefresh() }
             .store(in: &cancellables)
@@ -166,77 +260,110 @@ final class DayManager: ObservableObject {
     /// Recomputes visibility, progress and display text for the menu bar item.
     func refresh() {
         let now = Date()
-        let isWorkday = shouldDisplay(on: now)
-        isActive = isWorkday
-        menuValueText = ""
-
-        guard let startOfToday = combine(date: now, with: startTime),
-              let endOfToday = combine(date: now, with: endTime) else {
-            progress = 0
-            displayText = "Configure working hours"
-            return
+        let todayComponents = Calendar.current.dateComponents([.year, .month, .day], from: now)
+        if todayComponents != lastCompletionDay {
+            hasTriggeredCompletionForCurrentDay = false
         }
 
-        guard endOfToday > startOfToday else {
-            progress = 0
-            displayText = "End time must be later than start time"
-            return
-        }
-
-        guard isWorkday else {
+        let weekdayIndex = Calendar.current.component(.weekday, from: now)
+        guard let weekday = Weekday(rawValue: weekdayIndex), let scheduledBlocks = workBlocks[weekday], !scheduledBlocks.isEmpty else {
             progress = 0
             displayText = "Outside scheduled days"
+            menuValueText = ""
+            isActive = false
             return
         }
 
-        if now < startOfToday {
+        let schedule = buildSchedule(from: scheduledBlocks, on: now)
+        guard !schedule.isEmpty else {
+            progress = 0
+            displayText = "End time must be later than start time"
+            menuValueText = ""
+            isActive = false
+            return
+        }
+
+        let totalDuration = schedule.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
+        guard totalDuration > 0 else {
+            progress = 0
+            displayText = "Configure working hours"
+            isActive = false
+            menuValueText = ""
+            return
+        }
+
+        let firstStart = schedule.first!.start
+        let lastEnd = schedule.last!.end
+
+        if now < firstStart {
             progress = 1
-            displayText = "Workday starts at \(formattedTime(startOfToday))"
+            displayText = "Workday starts at \(formattedTime(firstStart))"
             if showMenuValue {
-                let total = endOfToday.timeIntervalSince(startOfToday)
-                menuValueText = formattedMenuValue(remaining: total, total: total)
+                menuValueText = formattedMenuValue(remaining: totalDuration, total: totalDuration)
+            } else {
+                menuValueText = ""
             }
+            isActive = false
             hasTriggeredCompletionForCurrentDay = false
             return
         }
 
-        if now >= endOfToday {
+        if now >= lastEnd {
             progress = 0
             displayText = "Workday completed"
             if showMenuValue {
-                let total = endOfToday.timeIntervalSince(startOfToday)
-                menuValueText = formattedMenuValue(remaining: 0, total: total)
+                menuValueText = formattedMenuValue(remaining: 0, total: totalDuration)
+            } else {
+                menuValueText = ""
             }
+            isActive = false
             if !hasTriggeredCompletionForCurrentDay {
                 hasTriggeredCompletionForCurrentDay = true
+                lastCompletionDay = todayComponents
                 onDayComplete?()
             }
             return
         }
 
-        let total = endOfToday.timeIntervalSince(startOfToday)
-        let remaining = max(0, endOfToday.timeIntervalSince(now))
-        progress = total == 0 ? 0 : min(1, remaining / total)
-        displayText = formattedDisplayText(remaining: remaining, total: total)
-        if showMenuValue {
-            menuValueText = formattedMenuValue(remaining: remaining, total: total)
+        let remaining = remainingTime(from: now, schedule: schedule)
+        progress = min(1, max(0, remaining / totalDuration))
+
+        let isInsideBlock = schedule.contains(where: { $0.start <= now && now < $0.end })
+        isActive = isInsideBlock
+        if isInsideBlock {
+            displayText = formattedDisplayText(remaining: remaining, total: totalDuration)
+        } else {
+            displayText = ""
         }
+
+        if showMenuValue {
+            menuValueText = formattedMenuValue(remaining: remaining, total: totalDuration)
+        } else {
+            menuValueText = ""
+        }
+
         hasTriggeredCompletionForCurrentDay = false
     }
 
-    private func combine(date: Date, with time: Date) -> Date? {
-        let calendar = Calendar.current
-        var components = calendar.dateComponents([.year, .month, .day], from: date)
-        let timeComponents = calendar.dateComponents([.hour, .minute], from: time)
-        components.hour = timeComponents.hour
-        components.minute = timeComponents.minute
-        components.second = 0
-        return calendar.date(from: components)
+    private func buildSchedule(from blocks: [WorkBlock], on date: Date) -> [(block: WorkBlock, start: Date, end: Date)] {
+        blocks
+            .sorted { $0.start.totalMinutes < $1.start.totalMinutes }
+            .compactMap { block -> (block: WorkBlock, start: Date, end: Date)? in
+                guard let start = block.startDate(on: date), let end = block.endDate(on: date), start < end else { return nil }
+                return (block, start, end)
+            }
     }
 
-    private func shouldDisplay(on date: Date) -> Bool {
-        let weekday = Calendar.current.component(.weekday, from: date)
-        return selectedWeekdays.contains(where: { $0.rawValue == weekday })
+    private func remainingTime(from currentDate: Date, schedule: [(block: WorkBlock, start: Date, end: Date)]) -> TimeInterval {
+        schedule.reduce(0) { partialResult, item in
+            if currentDate < item.start {
+                return partialResult + item.end.timeIntervalSince(item.start)
+            }
+            if currentDate >= item.end {
+                return partialResult
+            }
+            return partialResult + item.end.timeIntervalSince(currentDate)
+        }
     }
 
     private func formattedDisplayText(remaining: TimeInterval, total: TimeInterval) -> String {
@@ -288,30 +415,22 @@ final class DayManager: ObservableObject {
     }
 
     private func persist() {
+        let filteredBlocks = workBlocks.reduce(into: [Int: [WorkBlock]]()) { partialResult, entry in
+            guard !entry.value.isEmpty else { return }
+            partialResult[entry.key.rawValue] = entry.value
+        }
+
         let settings = WorkdaySettings(
-            selectedWeekdays: selectedWeekdays.map { $0.rawValue },
-            startTime: DayManager.components(from: startTime),
-            endTime: DayManager.components(from: endTime),
+            selectedWeekdays: Array(filteredBlocks.keys),
             displayMode: displayMode.rawValue,
             showMenuValue: showMenuValue,
-            persistOverflowState: persistOverflowState
+            persistOverflowState: persistOverflowState,
+            workBlocks: filteredBlocks
         )
 
         if let data = try? JSONEncoder().encode(settings) {
             defaults.set(data, forKey: settingsKey)
         }
-    }
-
-    private static func date(from components: WorkdaySettings.TimeComponents) -> Date? {
-        let calendar = Calendar.current
-        let base = calendar.startOfDay(for: Date())
-        return calendar.date(byAdding: DateComponents(hour: components.hour, minute: components.minute), to: base)
-    }
-
-    private static func components(from date: Date) -> WorkdaySettings.TimeComponents {
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.hour, .minute], from: date)
-        return .init(hour: components.hour ?? 0, minute: components.minute ?? 0)
     }
 
     private lazy var timeFormatter: DateFormatter = {
