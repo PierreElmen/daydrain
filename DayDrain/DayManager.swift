@@ -26,7 +26,6 @@ struct WorkBlock: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var start: TimeComponents
     var end: TimeComponents
-    var label: String? = nil
 
     var isValid: Bool {
         start.totalMinutes < end.totalMinutes
@@ -297,12 +296,8 @@ final class DayManager: ObservableObject {
 
         if now < firstStart {
             progress = 1
-            displayText = "Workday starts at \(formattedTime(firstStart))"
-            if showMenuValue {
-                menuValueText = formattedMenuValue(remaining: totalDuration, total: totalDuration)
-            } else {
-                menuValueText = ""
-            }
+            displayText = formattedScheduleRange(start: firstStart, end: lastEnd)
+            menuValueText = ""
             isActive = false
             hasTriggeredCompletionForCurrentDay = false
             return
@@ -442,5 +437,9 @@ final class DayManager: ObservableObject {
 
     private func formattedTime(_ date: Date) -> String {
         timeFormatter.string(from: date)
+    }
+
+    private func formattedScheduleRange(start: Date, end: Date) -> String {
+        "\(formattedTime(start)) - \(formattedTime(end))"
     }
 }

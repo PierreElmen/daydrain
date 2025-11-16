@@ -25,31 +25,44 @@ private struct GeneralSettingsView: View {
     @ObservedObject var dayManager: DayManager
     @ObservedObject var toDoManager: ToDoManager
     @State private var selectedWeekday: Weekday = Weekday(rawValue: Calendar.current.component(.weekday, from: Date())) ?? .monday
+    @State private var copyConfirmationMessage: String?
+    @State private var copyConfirmationToken = UUID()
 
     var body: some View {
         Form {
             Section(header: Text("Schedule")) {
-                Text("Build and reuse work blocks for each weekday. You can add, remove, reorder, or copy schedules between days.")
+                Text("Build and reuse work blocks for each weekday. You can add, remove, or copy schedules between days and blocks automatically sort by start time.")
                     .font(.callout)
                     .foregroundColor(.secondary)
 
                 WeekdaySelector(selectedWeekday: $selectedWeekday)
 
-                PresetButtons(applyPreset: applyPreset)
+                PresetButtons(
+                    applyPreset: applyPreset,
+                    addBlock: { addBlock(for: selectedWeekday) }
+                )
 
                 WorkBlockListEditor(
                     blocks: binding(for: selectedWeekday),
                     validationMessages: validationMessages(for: selectedWeekday),
-                    addBlock: { addBlock(for: selectedWeekday) },
-                    moveBlock: { from, offset in moveBlock(for: selectedWeekday, from: from, offset: offset) },
                     removeBlock: { removeBlock(for: selectedWeekday, at: $0) }
                 )
 
-                CopyScheduleMenu(
-                    selectedWeekday: selectedWeekday,
-                    copyAction: copySchedule(from:to:),
-                    hasBlocks: !(dayManager.workBlocks[selectedWeekday]?.isEmpty ?? true)
-                )
+                HStack(spacing: 12) {
+                    CopyScheduleMenu(
+                        selectedWeekday: selectedWeekday,
+                        copyAction: copySchedule(from:to:),
+                        hasBlocks: !(dayManager.workBlocks[selectedWeekday]?.isEmpty ?? true)
+                    )
+
+                    if let message = copyConfirmationMessage {
+                        Label(message, systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.callout)
+                    }
+
+                    Spacer()
+                }
             }
 
             Section(header: Text("Display")) {
@@ -123,13 +136,7 @@ private struct GeneralSettingsView: View {
     private func binding(for weekday: Weekday) -> Binding<[WorkBlock]> {
         Binding(
             get: { dayManager.workBlocks[weekday] ?? [] },
-            set: { newValue in
-                if newValue.isEmpty {
-                    dayManager.workBlocks.removeValue(forKey: weekday)
-                } else {
-                    dayManager.workBlocks[weekday] = newValue
-                }
-            }
+            set: { newValue in assignBlocks(newValue, to: weekday) }
         )
     }
 
@@ -137,26 +144,13 @@ private struct GeneralSettingsView: View {
         var blocks = dayManager.workBlocks[weekday] ?? []
         let newBlock = suggestedBlock(after: blocks.last)
         blocks.append(newBlock)
-        dayManager.workBlocks[weekday] = blocks
-    }
-
-    private func moveBlock(for weekday: Weekday, from index: Int, offset: Int) {
-        guard var blocks = dayManager.workBlocks[weekday], blocks.indices.contains(index) else { return }
-        let newIndex = index + offset
-        guard blocks.indices.contains(newIndex) else { return }
-        let block = blocks.remove(at: index)
-        blocks.insert(block, at: newIndex)
-        dayManager.workBlocks[weekday] = blocks
+        assignBlocks(blocks, to: weekday)
     }
 
     private func removeBlock(for weekday: Weekday, at index: Int) {
         guard var blocks = dayManager.workBlocks[weekday], blocks.indices.contains(index) else { return }
         blocks.remove(at: index)
-        if blocks.isEmpty {
-            dayManager.workBlocks.removeValue(forKey: weekday)
-        } else {
-            dayManager.workBlocks[weekday] = blocks
-        }
+        assignBlocks(blocks, to: weekday)
     }
 
     private func suggestedBlock(after block: WorkBlock?) -> WorkBlock {
@@ -174,12 +168,13 @@ private struct GeneralSettingsView: View {
     }
 
     private func applyPreset(_ presetBlocks: [WorkBlock]) {
-        dayManager.workBlocks[selectedWeekday] = presetBlocks
+        assignBlocks(presetBlocks, to: selectedWeekday)
     }
 
     private func copySchedule(from source: Weekday, to destination: Weekday) {
         guard let blocks = dayManager.workBlocks[source] else { return }
-        dayManager.workBlocks[destination] = blocks
+        assignBlocks(blocks, to: destination)
+        showCopyConfirmation(from: source, to: destination)
     }
 
     private func validationMessages(for weekday: Weekday) -> [String] {
@@ -189,8 +184,7 @@ private struct GeneralSettingsView: View {
 
         for (index, block) in sorted.enumerated() {
             if !block.isValid {
-                let label = block.label?.isEmpty == false ? "\(block.label!) " : ""
-                messages.append("\(label)block \(index + 1) ends before it starts.")
+                messages.append("Block \(index + 1) ends before it starts.")
             }
 
             if index > 0 {
@@ -202,6 +196,28 @@ private struct GeneralSettingsView: View {
         }
 
         return messages
+    }
+
+    private func assignBlocks(_ blocks: [WorkBlock], to weekday: Weekday) {
+        let sorted = blocks.sorted { $0.start.totalMinutes < $1.start.totalMinutes }
+        if sorted.isEmpty {
+            dayManager.workBlocks.removeValue(forKey: weekday)
+        } else {
+            dayManager.workBlocks[weekday] = sorted
+        }
+    }
+
+    private func showCopyConfirmation(from source: Weekday, to destination: Weekday) {
+        let message = "Copied \(source.localizedName) to \(destination.localizedName)"
+        let token = UUID()
+        copyConfirmationToken = token
+        copyConfirmationMessage = message
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if copyConfirmationToken == token {
+                copyConfirmationMessage = nil
+            }
+        }
     }
 }
 
@@ -220,6 +236,7 @@ private struct WeekdaySelector: View {
 
 private struct PresetButtons: View {
     var applyPreset: ([WorkBlock]) -> Void
+    var addBlock: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -233,24 +250,17 @@ private struct PresetButtons: View {
                 applyPreset(splitPreset)
             }
 
-            Button("Triple block") {
-                applyPreset(triplePreset)
+            Button(action: addBlock) {
+                Label("Add block", systemImage: "plus")
             }
+            .buttonStyle(.bordered)
         }
     }
 
     private var splitPreset: [WorkBlock] {
         [
-            WorkBlock(start: .init(hour: 9, minute: 0), end: .init(hour: 12, minute: 0), label: "Morning"),
-            WorkBlock(start: .init(hour: 13, minute: 0), end: .init(hour: 17, minute: 0), label: "Afternoon")
-        ]
-    }
-
-    private var triplePreset: [WorkBlock] {
-        [
-            WorkBlock(start: .init(hour: 9, minute: 0), end: .init(hour: 11, minute: 30), label: "Block 1"),
-            WorkBlock(start: .init(hour: 12, minute: 30), end: .init(hour: 15, minute: 0), label: "Block 2"),
-            WorkBlock(start: .init(hour: 15, minute: 30), end: .init(hour: 17, minute: 30), label: "Block 3")
+            WorkBlock(start: .init(hour: 9, minute: 0), end: .init(hour: 12, minute: 0)),
+            WorkBlock(start: .init(hour: 13, minute: 0), end: .init(hour: 17, minute: 0))
         ]
     }
 }
@@ -258,8 +268,6 @@ private struct PresetButtons: View {
 private struct WorkBlockListEditor: View {
     @Binding var blocks: [WorkBlock]
     var validationMessages: [String]
-    var addBlock: () -> Void
-    var moveBlock: (_ index: Int, _ offset: Int) -> Void
     var removeBlock: (_ index: Int) -> Void
 
     var body: some View {
@@ -273,10 +281,6 @@ private struct WorkBlockListEditor: View {
             ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
                 WorkBlockRow(
                     block: binding(for: block.id),
-                    canMoveUp: index > 0,
-                    canMoveDown: index < blocks.count - 1,
-                    moveUp: { moveBlock(index, -1) },
-                    moveDown: { moveBlock(index, 1) },
                     remove: { removeBlock(index) }
                 )
                 .padding(10)
@@ -289,14 +293,6 @@ private struct WorkBlockListEditor: View {
                         .foregroundColor(.orange)
                         .font(.callout)
                 }
-            }
-
-            HStack {
-                Button(action: addBlock) {
-                    Label("Add block", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                Spacer()
             }
         }
     }
@@ -315,46 +311,23 @@ private struct WorkBlockListEditor: View {
 
 private struct WorkBlockRow: View {
     @Binding var block: WorkBlock
-    let canMoveUp: Bool
-    let canMoveDown: Bool
-    let moveUp: () -> Void
-    let moveDown: () -> Void
     let remove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                TextField("Label (optional)", text: labelBinding)
-                Spacer()
-                Button(action: remove) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-                .foregroundColor(.red)
-            }
-
-            HStack {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 DatePicker("Start", selection: startBinding, displayedComponents: .hourAndMinute)
                 DatePicker("End", selection: endBinding, displayedComponents: .hourAndMinute)
             }
 
-            HStack {
-                Spacer()
-                MoveButton(label: "Move up", systemImage: "arrow.up", action: moveUp)
-                    .disabled(!canMoveUp)
-                MoveButton(label: "Move down", systemImage: "arrow.down", action: moveDown)
-                    .disabled(!canMoveDown)
-            }
-        }
-    }
+            Spacer()
 
-    private var labelBinding: Binding<String> {
-        Binding(
-            get: { block.label ?? "" },
-            set: { newValue in
-                block.label = newValue.isEmpty ? nil : newValue
+            Button(action: remove) {
+                Image(systemName: "trash")
             }
-        )
+            .buttonStyle(.borderless)
+            .foregroundColor(.red)
+        }
     }
 
     private var startBinding: Binding<Date> {
@@ -373,21 +346,6 @@ private struct WorkBlockRow: View {
                 block.end = TimeComponents.from(date: newValue)
             }
         )
-    }
-}
-
-private struct MoveButton: View {
-    let label: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .frame(width: 20, height: 20)
-                .accessibilityLabel(label)
-        }
-        .buttonStyle(.borderless)
     }
 }
 
