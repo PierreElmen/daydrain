@@ -10,33 +10,59 @@ struct SettingsView: View {
                 .tabItem {
                     Label("General", systemImage: "gear")
                 }
-            
+
             AboutView()
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
         }
         .padding(20)
-        .frame(minWidth: 520, minHeight: 420)
+        .frame(minWidth: 620, minHeight: 520)
     }
 }
 
 private struct GeneralSettingsView: View {
     @ObservedObject var dayManager: DayManager
     @ObservedObject var toDoManager: ToDoManager
+    @State private var selectedWeekday: Weekday = Weekday(rawValue: Calendar.current.component(.weekday, from: Date())) ?? .monday
+    @State private var copyConfirmationMessage: String?
+    @State private var copyConfirmationToken = UUID()
 
     var body: some View {
         Form {
-            Section(header: Text("Workdays")) {
-                Text("Select the days when DayDrain should appear in the menu bar.")
+            Section(header: Text("Schedule")) {
+                Text("Build and reuse work blocks for each weekday. You can add, remove, or copy schedules between days and blocks automatically sort by start time.")
                     .font(.callout)
                     .foregroundColor(.secondary)
-                WeekdayGrid(selectedWeekdays: $dayManager.selectedWeekdays)
-            }
 
-            Section(header: Text("Working hours")) {
-                DatePicker("Start", selection: $dayManager.startTime, displayedComponents: .hourAndMinute)
-                DatePicker("End", selection: $dayManager.endTime, displayedComponents: .hourAndMinute)
+                WeekdaySelector(selectedWeekday: $selectedWeekday)
+
+                PresetButtons(
+                    applyPreset: applyPreset,
+                    addBlock: { addBlock(for: selectedWeekday) }
+                )
+
+                WorkBlockListEditor(
+                    blocks: binding(for: selectedWeekday),
+                    validationMessages: validationMessages(for: selectedWeekday),
+                    removeBlock: { removeBlock(for: selectedWeekday, at: $0) }
+                )
+
+                HStack(spacing: 12) {
+                    CopyScheduleMenu(
+                        selectedWeekday: selectedWeekday,
+                        copyAction: copySchedule(from:to:),
+                        hasBlocks: !(dayManager.workBlocks[selectedWeekday]?.isEmpty ?? true)
+                    )
+
+                    if let message = copyConfirmationMessage {
+                        Label(message, systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.callout)
+                    }
+
+                    Spacer()
+                }
             }
 
             Section(header: Text("Display")) {
@@ -56,7 +82,7 @@ private struct GeneralSettingsView: View {
 
             Section(header: Text("Overflow")) {
                 Toggle("Keep overflow open between sessions", isOn: $dayManager.persistOverflowState)
-                
+
                 Text("Enable this if you use the overflow list frequently. When disabled, overflow is always collapsed when you open the panel.")
                     .font(.callout)
                     .foregroundColor(.secondary)
@@ -96,11 +122,247 @@ private struct GeneralSettingsView: View {
     private var dayManagerDescription: String {
         if dayManager.isActive {
             return dayManager.displayText.isEmpty
-                ? "DayDrain stays visible all day on selected weekdays and updates as your schedule progresses."
+                ? "DayDrain stays visible during active blocks and updates as your schedule progresses."
                 : dayManager.displayText
         }
 
-        return "Pick the weekdays you want. The menu bar item will stay available before, during, and after the hours you set."
+        if !dayManager.displayText.isEmpty {
+            return dayManager.displayText
+        }
+
+        return "Pick a weekday to adjust its blocks. The menu bar item will stay available before, during, and after the hours you set."
+    }
+
+    private func binding(for weekday: Weekday) -> Binding<[WorkBlock]> {
+        Binding(
+            get: { dayManager.workBlocks[weekday] ?? [] },
+            set: { newValue in assignBlocks(newValue, to: weekday) }
+        )
+    }
+
+    private func addBlock(for weekday: Weekday) {
+        var blocks = dayManager.workBlocks[weekday] ?? []
+        let newBlock = suggestedBlock(after: blocks.last)
+        blocks.append(newBlock)
+        assignBlocks(blocks, to: weekday)
+    }
+
+    private func removeBlock(for weekday: Weekday, at index: Int) {
+        guard var blocks = dayManager.workBlocks[weekday], blocks.indices.contains(index) else { return }
+        blocks.remove(at: index)
+        assignBlocks(blocks, to: weekday)
+    }
+
+    private func suggestedBlock(after block: WorkBlock?) -> WorkBlock {
+        guard let block else {
+            let start = TimeComponents(hour: 9, minute: 0)
+            let end = TimeComponents(hour: 10, minute: 0)
+            return WorkBlock(start: start, end: end)
+        }
+
+        let nextStartMinutes = min(23 * 60, block.end.totalMinutes + 30)
+        let nextEndMinutes = min(23 * 60 + 59, nextStartMinutes + 60)
+        let start = TimeComponents(hour: nextStartMinutes / 60, minute: nextStartMinutes % 60)
+        let end = TimeComponents(hour: nextEndMinutes / 60, minute: nextEndMinutes % 60)
+        return WorkBlock(start: start, end: end)
+    }
+
+    private func applyPreset(_ presetBlocks: [WorkBlock]) {
+        assignBlocks(presetBlocks, to: selectedWeekday)
+    }
+
+    private func copySchedule(from source: Weekday, to destination: Weekday) {
+        guard let blocks = dayManager.workBlocks[source] else { return }
+        assignBlocks(blocks, to: destination)
+        showCopyConfirmation(from: source, to: destination)
+    }
+
+    private func validationMessages(for weekday: Weekday) -> [String] {
+        guard let blocks = dayManager.workBlocks[weekday], !blocks.isEmpty else { return [] }
+        let sorted = blocks.sorted { $0.start.totalMinutes < $1.start.totalMinutes }
+        var messages: [String] = []
+
+        for (index, block) in sorted.enumerated() {
+            if !block.isValid {
+                messages.append("Block \(index + 1) ends before it starts.")
+            }
+
+            if index > 0 {
+                let previous = sorted[index - 1]
+                if block.start.totalMinutes < previous.end.totalMinutes {
+                    messages.append("Blocks \(index) and \(index + 1) overlap.")
+                }
+            }
+        }
+
+        return messages
+    }
+
+    private func assignBlocks(_ blocks: [WorkBlock], to weekday: Weekday) {
+        let sorted = blocks.sorted { $0.start.totalMinutes < $1.start.totalMinutes }
+        if sorted.isEmpty {
+            dayManager.workBlocks.removeValue(forKey: weekday)
+        } else {
+            dayManager.workBlocks[weekday] = sorted
+        }
+    }
+
+    private func showCopyConfirmation(from source: Weekday, to destination: Weekday) {
+        let message = "Copied \(source.localizedName) to \(destination.localizedName)"
+        let token = UUID()
+        copyConfirmationToken = token
+        copyConfirmationMessage = message
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if copyConfirmationToken == token {
+                copyConfirmationMessage = nil
+            }
+        }
+    }
+}
+
+private struct WeekdaySelector: View {
+    @Binding var selectedWeekday: Weekday
+
+    var body: some View {
+        Picker("Weekday", selection: $selectedWeekday) {
+            ForEach(Weekday.allCases) { weekday in
+                Text(weekday.localizedName.prefix(3)).tag(weekday)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+}
+
+private struct PresetButtons: View {
+    var applyPreset: ([WorkBlock]) -> Void
+    var addBlock: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button("Full day") {
+                let start = TimeComponents(hour: 9, minute: 0)
+                let end = TimeComponents(hour: 17, minute: 0)
+                applyPreset([WorkBlock(start: start, end: end)])
+            }
+
+            Button("Split AM/PM") {
+                applyPreset(splitPreset)
+            }
+
+            Button(action: addBlock) {
+                Label("Add block", systemImage: "plus")
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var splitPreset: [WorkBlock] {
+        [
+            WorkBlock(start: .init(hour: 9, minute: 0), end: .init(hour: 12, minute: 0)),
+            WorkBlock(start: .init(hour: 13, minute: 0), end: .init(hour: 17, minute: 0))
+        ]
+    }
+}
+
+private struct WorkBlockListEditor: View {
+    @Binding var blocks: [WorkBlock]
+    var validationMessages: [String]
+    var removeBlock: (_ index: Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if blocks.isEmpty {
+                Text("No blocks for this day. Add one to begin scheduling.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+
+            ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
+                WorkBlockRow(
+                    block: binding(for: block.id),
+                    remove: { removeBlock(index) }
+                )
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+            }
+
+            if !validationMessages.isEmpty {
+                ForEach(validationMessages, id: \.self) { message in
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.callout)
+                }
+            }
+        }
+    }
+
+    private func binding(for id: UUID) -> Binding<WorkBlock> {
+        guard let index = blocks.firstIndex(where: { $0.id == id }) else {
+            return .constant(WorkBlock(start: .init(hour: 9, minute: 0), end: .init(hour: 10, minute: 0)))
+        }
+
+        return Binding(
+            get: { blocks[index] },
+            set: { blocks[index] = $0 }
+        )
+    }
+}
+
+private struct WorkBlockRow: View {
+    @Binding var block: WorkBlock
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                DatePicker("Start", selection: startBinding, displayedComponents: .hourAndMinute)
+                DatePicker("End", selection: endBinding, displayedComponents: .hourAndMinute)
+            }
+
+            Spacer()
+
+            Button(action: remove) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .foregroundColor(.red)
+        }
+    }
+
+    private var startBinding: Binding<Date> {
+        Binding(
+            get: { block.start.date(on: Date()) ?? Date() },
+            set: { newValue in
+                block.start = TimeComponents.from(date: newValue)
+            }
+        )
+    }
+
+    private var endBinding: Binding<Date> {
+        Binding(
+            get: { block.end.date(on: Date()) ?? Date() },
+            set: { newValue in
+                block.end = TimeComponents.from(date: newValue)
+            }
+        )
+    }
+}
+
+private struct CopyScheduleMenu: View {
+    let selectedWeekday: Weekday
+    let copyAction: (Weekday, Weekday) -> Void
+    let hasBlocks: Bool
+
+    var body: some View {
+        Menu("Copy to…") {
+            ForEach(Weekday.allCases.filter { $0 != selectedWeekday }) { weekday in
+                Button(weekday.localizedName) {
+                    copyAction(selectedWeekday, weekday)
+                }
+            }
+        }
+        .disabled(!hasBlocks)
     }
 }
 
@@ -110,61 +372,31 @@ private struct AboutView: View {
             Image(systemName: "clock.fill")
                 .font(.system(size: 60))
                 .foregroundColor(.accentColor)
-            
+
             Text("DayDrain")
                 .font(.title)
                 .fontWeight(.bold)
-            
+
             Text("Version 1.0")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-            
+
             Text("A menu bar app that visualizes your workday progress")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 60)
-            
+
             Divider()
                 .padding(.horizontal, 60)
-            
+
             Text("Made with ❤️ using SwiftUI")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            
+
             Spacer()
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct WeekdayGrid: View {
-    @Binding var selectedWeekdays: Set<Weekday>
-    private let columns: [GridItem] = Array(repeating: .init(.flexible()), count: 3)
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(Weekday.allCases) { weekday in
-                Toggle(isOn: binding(for: weekday)) {
-                    Text(weekday.localizedName)
-                        .frame(maxWidth: .infinity)
-                }
-                .toggleStyle(.button)
-            }
-        }
-    }
-
-    private func binding(for weekday: Weekday) -> Binding<Bool> {
-        Binding(
-            get: { selectedWeekdays.contains(weekday) },
-            set: { isOn in
-                if isOn {
-                    selectedWeekdays.insert(weekday)
-                } else {
-                    selectedWeekdays.remove(weekday)
-                }
-            }
-        )
     }
 }
 
