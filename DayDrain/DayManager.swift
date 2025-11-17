@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AppKit
 
 struct TimeComponents: Codable, Equatable {
     var hour: Int
@@ -51,6 +52,143 @@ extension TimeComponents {
     }
 }
 
+struct RGBAColor: Codable, Equatable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
+
+    init(red: Double, green: Double, blue: Double, alpha: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    init(nsColor: NSColor) {
+        let converted = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
+        self.red = converted.redComponent
+        self.green = converted.greenComponent
+        self.blue = converted.blueComponent
+        self.alpha = converted.alphaComponent
+    }
+
+    func makeNSColor() -> NSColor {
+        NSColor(red: red, green: green, blue: blue, alpha: alpha)
+    }
+}
+
+enum BlockReminderStage: Int, CaseIterable, Identifiable, Codable, Hashable {
+    case thirty = 30
+    case fifteen = 15
+    case zero = 0
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .thirty:
+            return "30 minutes left"
+        case .fifteen:
+            return "15 minutes left"
+        case .zero:
+            return "Time's up"
+        }
+    }
+
+    var styleName: String {
+        switch self {
+        case .thirty:
+            return "Gentle Warm Amber"
+        case .fifteen:
+            return "Muted Tangerine"
+        case .zero:
+            return "Burnt Copper"
+        }
+    }
+
+    var defaultHexColor: String {
+        switch self {
+        case .thirty:
+            return "E8CFAE"
+        case .fifteen:
+            return "F2B38A"
+        case .zero:
+            return "D67A4B"
+        }
+    }
+
+    var defaultColor: NSColor {
+        NSColor(hex: defaultHexColor) ?? .systemOrange
+    }
+
+    var defaultPulses: Int {
+        switch self {
+        case .thirty:
+            return 1
+        case .fifteen:
+            return 2
+        case .zero:
+            return 3
+        }
+    }
+
+    var fadeDuration: TimeInterval {
+        switch self {
+        case .thirty:
+            return 0.25
+        case .fifteen:
+            return 0.28
+        case .zero:
+            return 0.38
+        }
+    }
+
+    var peakOpacity: Double {
+        switch self {
+        case .thirty:
+            return 0.18
+        case .fifteen:
+            return 0.22
+        case .zero:
+            return 0.26
+        }
+    }
+}
+
+struct BlockReminderPreferences: Codable, Equatable {
+    var enabledStageIDs: Set<BlockReminderStage>
+    var customColors: [BlockReminderStage: RGBAColor]
+
+    static var `default`: BlockReminderPreferences {
+        BlockReminderPreferences(
+            enabledStageIDs: Set(BlockReminderStage.allCases),
+            customColors: [
+                .thirty: RGBAColor(nsColor: BlockReminderStage.thirty.defaultColor),
+                .fifteen: RGBAColor(nsColor: BlockReminderStage.fifteen.defaultColor),
+                .zero: RGBAColor(nsColor: BlockReminderStage.zero.defaultColor)
+            ]
+        )
+    }
+
+    func color(for stage: BlockReminderStage) -> NSColor {
+        if let custom = customColors[stage] {
+            return custom.makeNSColor()
+        }
+        return stage.defaultColor
+    }
+}
+
+struct BlockReminderEvent: Identifiable, Equatable {
+    var id = UUID()
+    var blockID: UUID
+    var stage: BlockReminderStage
+    var color: NSColor
+    var pulses: Int
+    var fadeDuration: TimeInterval
+    var peakOpacity: Double
+}
+
 /// Represents the user configurable settings that drive the draining bar.
 struct WorkdaySettings: Codable {
     var selectedWeekdays: [Int]
@@ -60,6 +198,7 @@ struct WorkdaySettings: Codable {
     var workBlocks: [Int: [WorkBlock]] = [:]
     var startTime: TimeComponents? // Legacy support
     var endTime: TimeComponents? // Legacy support
+    var reminderPreferences: BlockReminderPreferences?
 
     enum CodingKeys: String, CodingKey {
         case selectedWeekdays
@@ -69,18 +208,21 @@ struct WorkdaySettings: Codable {
         case showMenuValue
         case persistOverflowState
         case workBlocks
+        case reminderPreferences
     }
 
     init(selectedWeekdays: [Int],
          displayMode: DayDisplayMode.RawValue,
          showMenuValue: Bool,
          persistOverflowState: Bool,
-         workBlocks: [Int: [WorkBlock]]) {
+         workBlocks: [Int: [WorkBlock]],
+         reminderPreferences: BlockReminderPreferences) {
         self.selectedWeekdays = selectedWeekdays
         self.displayMode = displayMode
         self.showMenuValue = showMenuValue
         self.persistOverflowState = persistOverflowState
         self.workBlocks = workBlocks
+        self.reminderPreferences = reminderPreferences
     }
 
     init(from decoder: Decoder) throws {
@@ -92,6 +234,7 @@ struct WorkdaySettings: Codable {
         self.workBlocks = try container.decodeIfPresent([Int: [WorkBlock]].self, forKey: .workBlocks) ?? [:]
         self.startTime = try container.decodeIfPresent(TimeComponents.self, forKey: .startTime)
         self.endTime = try container.decodeIfPresent(TimeComponents.self, forKey: .endTime)
+        self.reminderPreferences = try container.decodeIfPresent(BlockReminderPreferences.self, forKey: .reminderPreferences)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -101,6 +244,7 @@ struct WorkdaySettings: Codable {
         try container.encode(showMenuValue, forKey: .showMenuValue)
         try container.encode(persistOverflowState, forKey: .persistOverflowState)
         try container.encode(workBlocks, forKey: .workBlocks)
+        try container.encode(reminderPreferences, forKey: .reminderPreferences)
     }
 }
 
@@ -152,11 +296,13 @@ final class DayManager: ObservableObject {
     @Published var displayMode: DayDisplayMode
     @Published var showMenuValue: Bool
     @Published var persistOverflowState: Bool
+    @Published var reminderPreferences: BlockReminderPreferences
 
     @Published private(set) var progress: Double = 0
     @Published private(set) var isActive: Bool = false
     @Published private(set) var displayText: String = ""
     @Published private(set) var menuValueText: String = ""
+    @Published private(set) var latestReminderEvent: BlockReminderEvent?
 
     var onDayComplete: (() -> Void)?
 
@@ -167,6 +313,8 @@ final class DayManager: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let settingsKey = "WorkdaySettings"
+    private var triggeredStages: [UUID: Set<BlockReminderStage>] = [:]
+    private var currentActiveBlockID: UUID?
 
     init() {
         let defaults = Self.defaultSettings()
@@ -176,6 +324,7 @@ final class DayManager: ObservableObject {
             self.displayMode = DayDisplayMode(rawValue: decoded.displayMode) ?? defaults.displayMode
             self.showMenuValue = decoded.showMenuValue
             self.persistOverflowState = decoded.persistOverflowState
+            self.reminderPreferences = decoded.reminderPreferences ?? defaults.reminderPreferences
 
             let migratedBlocks = decoded.workBlocks.reduce(into: [Weekday: [WorkBlock]]()) { partialResult, item in
                 guard let weekday = Weekday(rawValue: item.key) else { return }
@@ -198,6 +347,7 @@ final class DayManager: ObservableObject {
             self.displayMode = defaults.displayMode
             self.showMenuValue = defaults.showMenuValue
             self.persistOverflowState = defaults.persistOverflowState
+            self.reminderPreferences = defaults.reminderPreferences
         }
 
         bindSettingsChanges()
@@ -209,7 +359,7 @@ final class DayManager: ObservableObject {
         timer?.invalidate()
     }
 
-    private static func defaultSettings() -> (workBlocks: [Weekday: [WorkBlock]], displayMode: DayDisplayMode, showMenuValue: Bool, persistOverflowState: Bool) {
+    private static func defaultSettings() -> (workBlocks: [Weekday: [WorkBlock]], displayMode: DayDisplayMode, showMenuValue: Bool, persistOverflowState: Bool, reminderPreferences: BlockReminderPreferences) {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: Date())
         let defaultStart = calendar.date(byAdding: DateComponents(hour: 9), to: startOfDay) ?? Date()
@@ -222,7 +372,8 @@ final class DayManager: ObservableObject {
         return (workBlocks: blocks,
                 displayMode: .percentage,
                 showMenuValue: false,
-                persistOverflowState: false)
+                persistOverflowState: false,
+                reminderPreferences: .default)
     }
 
     private func bindSettingsChanges() {
@@ -245,6 +396,11 @@ final class DayManager: ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in self?.persist() }
             .store(in: &cancellables)
+
+        $reminderPreferences
+            .dropFirst()
+            .sink { [weak self] _ in self?.persist() }
+            .store(in: &cancellables)
     }
 
     private func configureTimer() {
@@ -262,6 +418,8 @@ final class DayManager: ObservableObject {
         let todayComponents = Calendar.current.dateComponents([.year, .month, .day], from: now)
         if todayComponents != lastCompletionDay {
             hasTriggeredCompletionForCurrentDay = false
+            triggeredStages.removeAll()
+            currentActiveBlockID = nil
         }
 
         let weekdayIndex = Calendar.current.component(.weekday, from: now)
@@ -274,6 +432,8 @@ final class DayManager: ObservableObject {
         }
 
         let schedule = buildSchedule(from: scheduledBlocks, on: now)
+        purgeTriggeredStages(using: schedule, currentDate: now)
+
         guard !schedule.isEmpty else {
             progress = 0
             displayText = "End time must be later than start time"
@@ -300,6 +460,7 @@ final class DayManager: ObservableObject {
             menuValueText = ""
             isActive = false
             hasTriggeredCompletionForCurrentDay = false
+            currentActiveBlockID = nil
             return
         }
 
@@ -312,6 +473,7 @@ final class DayManager: ObservableObject {
                 menuValueText = ""
             }
             isActive = false
+            currentActiveBlockID = nil
             if !hasTriggeredCompletionForCurrentDay {
                 hasTriggeredCompletionForCurrentDay = true
                 lastCompletionDay = todayComponents
@@ -323,7 +485,8 @@ final class DayManager: ObservableObject {
         let remaining = remainingTime(from: now, schedule: schedule)
         progress = min(1, max(0, remaining / totalDuration))
 
-        let isInsideBlock = schedule.contains(where: { $0.start <= now && now < $0.end })
+        let activeBlock = schedule.first { $0.start <= now && now < $0.end }
+        let isInsideBlock = activeBlock != nil
         isActive = isInsideBlock
         if isInsideBlock {
             displayText = formattedDisplayText(remaining: remaining, total: totalDuration)
@@ -338,6 +501,10 @@ final class DayManager: ObservableObject {
         }
 
         hasTriggeredCompletionForCurrentDay = false
+
+        if let activeBlock {
+            handleReminders(for: activeBlock, now: now)
+        }
     }
 
     private func buildSchedule(from blocks: [WorkBlock], on date: Date) -> [(block: WorkBlock, start: Date, end: Date)] {
@@ -359,6 +526,61 @@ final class DayManager: ObservableObject {
             }
             return partialResult + item.end.timeIntervalSince(currentDate)
         }
+    }
+
+    func minutesRemaining(in block: WorkBlock, now: Date) -> Int? {
+        guard let start = block.startDate(on: now), let end = block.endDate(on: now), start <= now, now < end else { return nil }
+        let interval = end.timeIntervalSince(now)
+        return Int(floor(interval / 60))
+    }
+
+    private func handleReminders(for activeBlock: (block: WorkBlock, start: Date, end: Date), now: Date) {
+        if currentActiveBlockID != activeBlock.block.id {
+            currentActiveBlockID = activeBlock.block.id
+            triggeredStages[activeBlock.block.id] = []
+        }
+
+        guard let minutesRemaining = minutesRemaining(in: activeBlock.block, now: now) else { return }
+
+        for stage in BlockReminderStage.allCases {
+            guard reminderPreferences.enabledStageIDs.contains(stage) else { continue }
+            let alreadyTriggered = triggeredStages[activeBlock.block.id, default: []].contains(stage)
+            guard !alreadyTriggered else { continue }
+
+            let threshold = stage.rawValue
+            if minutesRemaining <= threshold {
+                var triggeredSet = triggeredStages[activeBlock.block.id] ?? []
+                triggeredSet.insert(stage)
+                triggeredStages[activeBlock.block.id] = triggeredSet
+
+                let event = BlockReminderEvent(
+                    blockID: activeBlock.block.id,
+                    stage: stage,
+                    color: reminderPreferences.color(for: stage),
+                    pulses: stage.defaultPulses,
+                    fadeDuration: stage.fadeDuration,
+                    peakOpacity: stage.peakOpacity
+                )
+                latestReminderEvent = event
+            }
+        }
+    }
+
+    private func purgeTriggeredStages(using schedule: [(block: WorkBlock, start: Date, end: Date)], currentDate: Date) {
+        let validBlockIDs = schedule.filter { $0.end >= currentDate }.map { $0.block.id }
+        triggeredStages = triggeredStages.filter { validBlockIDs.contains($0.key) }
+    }
+
+    func previewReminder(for stage: BlockReminderStage) {
+        let event = BlockReminderEvent(
+            blockID: UUID(),
+            stage: stage,
+            color: reminderPreferences.color(for: stage),
+            pulses: stage.defaultPulses,
+            fadeDuration: stage.fadeDuration,
+            peakOpacity: stage.peakOpacity
+        )
+        latestReminderEvent = event
     }
 
     private func formattedDisplayText(remaining: TimeInterval, total: TimeInterval) -> String {
@@ -420,7 +642,8 @@ final class DayManager: ObservableObject {
             displayMode: displayMode.rawValue,
             showMenuValue: showMenuValue,
             persistOverflowState: persistOverflowState,
-            workBlocks: filteredBlocks
+            workBlocks: filteredBlocks,
+            reminderPreferences: reminderPreferences
         )
 
         if let data = try? JSONEncoder().encode(settings) {
@@ -441,5 +664,22 @@ final class DayManager: ObservableObject {
 
     private func formattedScheduleRange(start: Date, end: Date) -> String {
         "\(formattedTime(start)) - \(formattedTime(end))"
+    }
+}
+
+private extension NSColor {
+    convenience init?(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.init(charactersIn: "#")))
+        guard cleaned.count == 6 else { return nil }
+
+        let scanner = Scanner(string: cleaned)
+        var hexNumber: UInt64 = 0
+        guard scanner.scanHexInt64(&hexNumber) else { return nil }
+
+        let r = Double((hexNumber & 0xFF0000) >> 16) / 255
+        let g = Double((hexNumber & 0x00FF00) >> 8) / 255
+        let b = Double(hexNumber & 0x0000FF) / 255
+
+        self.init(red: r, green: g, blue: b, alpha: 1.0)
     }
 }
