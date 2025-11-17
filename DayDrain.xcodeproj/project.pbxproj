@@ -24,6 +24,7 @@
                 AAB2B2B2B2B2B2B2B2B2B2B2 /* NotesPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBC2C2C2C2C2C2C2C2C2C2C2 /* NotesPanel.swift */; };
                 AAC3C3C3C3C3C3C3C3C3C3C3 /* FloatingNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBD3D3D3D3D3D3D3D3D3D3D3 /* FloatingNoteView.swift */; };
                 AAD4D4D4D4D4D4D4D4D4D4D4 /* FloatingNoteWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE4E4E4E4E4E4E4E4E4E4E4 /* FloatingNoteWindow.swift */; };
+                AA1313131313131313131313 /* BlockReminderFlashController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1313131313131313131313 /* BlockReminderFlashController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +47,7 @@
                 BBE4E4E4E4E4E4E4E4E4E4E4 /* FloatingNoteWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingNoteWindow.swift; sourceTree = "<group>"; };
                 CC1111111111111111111111 /* DayDrain.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DayDrain.app; sourceTree = BUILT_PRODUCTS_DIR; };
                 DD1111111111111111111111 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+                BB1313131313131313131313 /* BlockReminderFlashController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockReminderFlashController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +77,7 @@
                                 BB3333333333333333333333 /* StatusBarView.swift */,
                                 BB4444444444444444444444 /* SettingsView.swift */,
                                 BB5555555555555555555555 /* MenuBarController.swift */,
+                                BB1313131313131313131313 /* BlockReminderFlashController.swift */,
                                 BB6666666666666666666666 /* ToDoManager.swift */,
                                 BB7777777777777777777777 /* ToDoPanel.swift */,
                                 BB3030303030303030303030 /* OverflowList.swift */,
@@ -173,6 +176,7 @@
                                 AA3333333333333333333333 /* StatusBarView.swift in Sources */,
                                 AA4444444444444444444444 /* SettingsView.swift in Sources */,
                                 AA5555555555555555555555 /* MenuBarController.swift in Sources */,
+                                AA1313131313131313131313 /* BlockReminderFlashController.swift in Sources */,
                                 AA6666666666666666666666 /* ToDoManager.swift in Sources */,
                                 AA7777777777777777777777 /* ToDoPanel.swift in Sources */,
                                 AAF1F1F1F1F1F1F1F1F1F1F1 /* NotesManager.swift in Sources */,

@@ -10,6 +10,7 @@ final class MenuBarController {
     private var cancellables: Set<AnyCancellable> = []
     private let dayManager: DayManager
     private let toDoManager: ToDoManager
+    private let reminderFlashController = BlockReminderFlashController()
     private var settingsWindowController: NSWindowController?
     private let floatingNoteWindow: FloatingNoteWindow
     private var latestProgress: Double = 0
@@ -17,6 +18,7 @@ final class MenuBarController {
     private let statusItemHorizontalPadding: CGFloat = 8
     private var currentStatusItemLength: CGFloat = 0
     private var latestPulseToken: Int = 0
+    private var latestReminderToken: UUID?
     private var shouldDimBar: Bool = false
     private var shortcutMonitor: Any?
 
@@ -92,6 +94,20 @@ final class MenuBarController {
             .sink { [weak self] text in
                 let tooltip = text.isEmpty ? "DayDrain" : text
                 self?.statusItem.button?.toolTip = tooltip
+            }
+            .store(in: &cancellables)
+
+        dayManager.$latestReminderEvent
+            .compactMap { $0 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] event in
+                guard let self else { return }
+                guard self.latestReminderToken != event.id else { return }
+                self.latestReminderToken = event.id
+                self.reminderFlashController.flash(color: event.color,
+                                                   pulses: event.pulses,
+                                                   fadeDuration: event.fadeDuration,
+                                                   peakOpacity: event.peakOpacity)
             }
             .store(in: &cancellables)
 
