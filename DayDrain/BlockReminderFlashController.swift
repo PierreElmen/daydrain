@@ -89,15 +89,73 @@ private struct EdgeGlowView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let size = min(geometry.size.width, geometry.size.height)
-            let inset = size * 0.15
-            let lineWidth = max(12, size * 0.05)
-            let radius = size * 0.05
+            let width = geometry.size.width
+            let height = geometry.size.height
+            let verticalThickness = min(height * 0.18, 220)
+            let horizontalThickness = min(width * 0.18, 220)
+            let glowColor = state.color
+            let alpha = state.opacity
 
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .strokeBorder(state.color.opacity(state.opacity), lineWidth: lineWidth)
-                .padding(inset)
-                .background(Color.clear)
+            ZStack {
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                glowColor.opacity(alpha),
+                                glowColor.opacity(0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: verticalThickness)
+                    .frame(maxHeight: .infinity, alignment: .top)
+
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                glowColor.opacity(alpha),
+                                glowColor.opacity(0)
+                            ],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
+                    .frame(height: verticalThickness)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                glowColor.opacity(alpha),
+                                glowColor.opacity(0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: horizontalThickness)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                glowColor.opacity(alpha),
+                                glowColor.opacity(0)
+                            ],
+                            startPoint: .trailing,
+                            endPoint: .leading
+                        )
+                    )
+                    .frame(width: horizontalThickness)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .blur(radius: 22)
+            .compositingGroup()
+            .blendMode(.plusLighter)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)

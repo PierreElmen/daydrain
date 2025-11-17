@@ -211,6 +211,7 @@ final class MenuBarController {
         }
         updatePopoverContent()
         panelPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        adjustPopoverIfNeeded(relativeTo: button)
         if let window = panelPopover.contentViewController?.view.window {
             window.makeKey()
         }
@@ -227,6 +228,30 @@ final class MenuBarController {
         if !toDoManager.keepNotesPanelOpenBetweenSessions {
             toDoManager.hideNotesPanel()
         }
+    }
+
+    private func adjustPopoverIfNeeded(relativeTo button: NSStatusBarButton) {
+        guard let popoverWindow = panelPopover.contentViewController?.view.window else { return }
+        let screen = button.window?.screen ?? NSScreen.main
+        guard let visibleFrame = screen?.visibleFrame else { return }
+
+        var frame = popoverWindow.frame
+        let padding: CGFloat = 4
+
+        if frame.maxY > visibleFrame.maxY {
+            frame.origin.y = visibleFrame.maxY - frame.height - padding
+        }
+        if frame.minY < visibleFrame.minY {
+            frame.origin.y = visibleFrame.minY + padding
+        }
+        if frame.minX < visibleFrame.minX {
+            frame.origin.x = visibleFrame.minX + padding
+        }
+        if frame.maxX > visibleFrame.maxX {
+            frame.origin.x = visibleFrame.maxX - frame.width - padding
+        }
+
+        popoverWindow.setFrame(frame, display: true, animate: false)
     }
 
     private func updatePopoverContent() {

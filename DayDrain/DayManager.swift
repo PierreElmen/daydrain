@@ -571,6 +571,18 @@ final class DayManager: ObservableObject {
         triggeredStages = triggeredStages.filter { validBlockIDs.contains($0.key) }
     }
 
+    func previewReminder(for stage: BlockReminderStage) {
+        let event = BlockReminderEvent(
+            blockID: UUID(),
+            stage: stage,
+            color: reminderPreferences.color(for: stage),
+            pulses: stage.defaultPulses,
+            fadeDuration: stage.fadeDuration,
+            peakOpacity: stage.peakOpacity
+        )
+        latestReminderEvent = event
+    }
+
     private func formattedDisplayText(remaining: TimeInterval, total: TimeInterval) -> String {
         switch displayMode {
         case .percentage:
@@ -657,7 +669,7 @@ final class DayManager: ObservableObject {
 
 private extension NSColor {
     convenience init?(hex: String) {
-        var cleaned = hex.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.init(charactersIn: "#")))
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.init(charactersIn: "#")))
         guard cleaned.count == 6 else { return nil }
 
         let scanner = Scanner(string: cleaned)

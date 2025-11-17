@@ -155,27 +155,19 @@ private struct GeneralSettingsView: View {
 
     private func reminderRow(for stage: BlockReminderStage) -> some View {
         HStack(spacing: 12) {
-            Toggle(isOn: binding(for: stage)) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(stage.label) — \(stage.styleName)")
-                    Text(reminderDescription(for: stage))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+            Toggle(stage.label, isOn: binding(for: stage))
+
+            Spacer()
+
+            ColorWellPicker(color: nsColorBinding(for: stage))
+                .frame(width: 40, height: 24)
+
+            Button("Test") {
+                dayManager.previewReminder(for: stage)
             }
-
-            ColorPicker("", selection: colorBinding(for: stage))
-                .labelsHidden()
-                .frame(width: 48)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
-    }
-
-    private func reminderDescription(for stage: BlockReminderStage) -> String {
-        let currentHex = hexString(for: dayManager.reminderPreferences.color(for: stage))
-        if colorsMatchDefault(stage) {
-            return "Default #\(stage.defaultHexColor)"
-        }
-        return "Custom #\(currentHex)"
     }
 
     private func binding(for weekday: Weekday) -> Binding<[WorkBlock]> {
@@ -200,30 +192,15 @@ private struct GeneralSettingsView: View {
         )
     }
 
-    private func colorBinding(for stage: BlockReminderStage) -> Binding<Color> {
+    private func nsColorBinding(for stage: BlockReminderStage) -> Binding<NSColor> {
         Binding(
-            get: { Color(nsColor: dayManager.reminderPreferences.color(for: stage)) },
-            set: { newValue in
-                guard let cgColor = newValue.cgColor, let nsColor = NSColor(cgColor: cgColor) else { return }
+            get: { dayManager.reminderPreferences.color(for: stage) },
+            set: { newColor in
                 var preferences = dayManager.reminderPreferences
-                preferences.customColors[stage] = RGBAColor(nsColor: nsColor)
+                preferences.customColors[stage] = RGBAColor(nsColor: newColor)
                 dayManager.reminderPreferences = preferences
             }
         )
-    }
-
-    private func colorsMatchDefault(_ stage: BlockReminderStage) -> Bool {
-        let current = dayManager.reminderPreferences.customColors[stage] ?? RGBAColor(nsColor: stage.defaultColor)
-        let defaultColor = RGBAColor(nsColor: stage.defaultColor)
-        return current == defaultColor
-    }
-
-    private func hexString(for color: NSColor) -> String {
-        let converted = color.usingColorSpace(.deviceRGB) ?? color
-        return String(format: "%02X%02X%02X",
-                      Int(converted.redComponent * 255),
-                      Int(converted.greenComponent * 255),
-                      Int(converted.blueComponent * 255))
     }
 
     private func addBlock(for weekday: Weekday) {
@@ -306,5 +283,257 @@ private struct GeneralSettingsView: View {
                 copyConfirmationMessage = nil
             }
         }
+    }
+}
+
+private struct WeekdaySelector: View {
+    @Binding var selectedWeekday: Weekday
+
+    var body: some View {
+        Picker("Weekday", selection: $selectedWeekday) {
+            ForEach(Weekday.allCases) { weekday in
+                Text(weekday.localizedName).tag(weekday)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.bottom, 4)
+    }
+}
+
+private struct PresetButtons: View {
+    var applyPreset: ([WorkBlock]) -> Void
+    var addBlock: () -> Void
+
+    private var presets: [PresetDefinition] {
+        [
+            PresetDefinition(
+                id: "classic",
+                title: "Classic 9–5",
+                blocks: [
+                    .fromHours(startHour: 9, startMinute: 0, endHour: 17, endMinute: 0)
+                ]
+            ),
+            PresetDefinition(
+                id: "amPmSplit",
+                title: "AM/PM Split",
+                blocks: [
+                    .fromHours(startHour: 9, startMinute: 0, endHour: 12, endMinute: 0),
+                    .fromHours(startHour: 13, startMinute: 0, endHour: 17, endMinute: 0)
+                ]
+            ),
+            PresetDefinition(
+                id: "shortSprints",
+                title: "Short Sprints",
+                blocks: [
+                    .fromHours(startHour: 9, startMinute: 0, endHour: 10, endMinute: 30),
+                    .fromHours(startHour: 11, startMinute: 0, endHour: 12, endMinute: 30),
+                    .fromHours(startHour: 13, startMinute: 30, endHour: 17, endMinute: 0)
+                ]
+            )
+        ]
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Menu {
+                ForEach(presets) { preset in
+                    Button(preset.title) {
+                        applyPreset(preset.blocks)
+                    }
+                }
+            } label: {
+                Label("Apply preset", systemImage: "calendar.badge.plus")
+            }
+
+            Button(action: addBlock) {
+                Label("Add block", systemImage: "plus.circle")
+            }
+        }
+    }
+
+    private struct PresetDefinition: Identifiable {
+        let id: String
+        let title: String
+        let blocks: [WorkBlock]
+    }
+}
+
+private struct WorkBlockListEditor: View {
+    @Binding var blocks: [WorkBlock]
+    var validationMessages: [String]
+    var removeBlock: (Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if blocks.isEmpty {
+                Text("No blocks for this day yet. Add one to get started.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ForEach(Array(blocks.enumerated()), id: \.element.id) { index, _ in
+                    WorkBlockRow(
+                        index: index,
+                        block: Binding(
+                            get: { blocks[index] },
+                            set: { blocks[index] = $0 }
+                        ),
+                        remove: { removeBlock(index) }
+                    )
+                }
+            }
+
+            if !validationMessages.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(validationMessages, id: \.self) { message in
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+}
+
+private struct WorkBlockRow: View {
+    let index: Int
+    @Binding var block: WorkBlock
+    var remove: () -> Void
+
+    private var startBinding: Binding<Date> {
+        Binding(
+            get: { block.start.asDate() },
+            set: { newValue in block.start = TimeComponents.from(date: newValue) }
+        )
+    }
+
+    private var endBinding: Binding<Date> {
+        Binding(
+            get: { block.end.asDate() },
+            set: { newValue in block.end = TimeComponents.from(date: newValue) }
+        )
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Block \(index + 1)")
+                .font(.subheadline)
+                .frame(width: 70, alignment: .leading)
+
+            DatePicker("Start", selection: startBinding, displayedComponents: .hourAndMinute)
+                .labelsHidden()
+
+            DatePicker("End", selection: endBinding, displayedComponents: .hourAndMinute)
+                .labelsHidden()
+
+            Button(role: .destructive, action: remove) {
+                Image(systemName: "trash")
+            }
+            .help("Remove block \(index + 1)")
+        }
+    }
+}
+
+private struct CopyScheduleMenu: View {
+    var selectedWeekday: Weekday
+    var copyAction: (Weekday, Weekday) -> Void
+    var hasBlocks: Bool
+
+    private var otherWeekdays: [Weekday] {
+        Weekday.allCases.filter { $0 != selectedWeekday }
+    }
+
+    var body: some View {
+        Menu {
+            if hasBlocks {
+                Section("Copy selected into…") {
+                    ForEach(otherWeekdays) { target in
+                        Button(target.localizedName) {
+                            copyAction(selectedWeekday, target)
+                        }
+                    }
+                }
+            }
+
+            Section("Replace selected with…") {
+                ForEach(otherWeekdays) { source in
+                    Button(source.localizedName) {
+                        copyAction(source, selectedWeekday)
+                    }
+                }
+            }
+        } label: {
+            Label("Copy schedule", systemImage: "square.on.square")
+        }
+        .disabled(otherWeekdays.isEmpty)
+    }
+}
+
+private struct ColorWellPicker: NSViewRepresentable {
+    @Binding var color: NSColor
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSColorWell {
+        let well = NSColorWell()
+        well.isBordered = true
+        well.target = context.coordinator
+        well.action = #selector(Coordinator.colorDidChange(_:))
+        well.color = color
+        return well
+    }
+
+    func updateNSView(_ nsView: NSColorWell, context: Context) {
+        guard nsView.color != color else { return }
+        nsView.color = color
+    }
+
+    final class Coordinator: NSObject {
+        var parent: ColorWellPicker
+
+        init(_ parent: ColorWellPicker) {
+            self.parent = parent
+        }
+
+        @objc func colorDidChange(_ sender: NSColorWell) {
+            parent.color = sender.color
+        }
+    }
+}
+
+private struct AboutView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("DayDrain").font(.title).bold()
+            Text("Designed to keep your focus blocks intentional and calm. Configure daily schedules, track progress in the menu bar, and wind down with gentle reminders.")
+                .font(.body)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding()
+    }
+}
+
+private extension TimeComponents {
+    func asDate() -> Date {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return calendar.date(from: components) ?? Date()
+    }
+}
+
+private extension WorkBlock {
+    static func fromHours(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int) -> WorkBlock {
+        WorkBlock(
+            start: TimeComponents(hour: startHour, minute: startMinute),
+            end: TimeComponents(hour: endHour, minute: endMinute)
+        )
     }
 }
